@@ -7,14 +7,14 @@ public sealed class ExperimentsApp : ViewBase
     {
         return Layout.Vertical().Padding(4).Gap(2)
                | Text.H2("Experiment Input Workspace")
-               | Text.Markdown("Тут буде UI для створення експерименту, вводу параметрів та імпорту CSV.")
+               | Text.Markdown("This screen will contain UI for creating experiments, entering parameters, and importing CSV files.")
                | new Card(
                    Layout.Vertical().Gap(1)
-                   | Text.H3("План екрана")
-                   | Text.Block("- Метадані експерименту")
-                   | Text.Block("- Параметри вимірювань")
-                   | Text.Block("- Статус: draft / submitted / evaluated")
-                   | Text.Block("- Перевірка коректності вхідних даних")
+                   | Text.H3("Screen Plan")
+                   | Text.Block("- Experiment metadata")
+                   | Text.Block("- Measurement parameters")
+                   | Text.Block("- Status: draft / submitted / evaluated")
+                   | Text.Block("- Input data validation")
                );
     }
 }
