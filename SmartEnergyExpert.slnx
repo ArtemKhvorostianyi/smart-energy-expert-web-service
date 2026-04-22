@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/server/">
+    <Project Path="server/SmartEnergyExpert.Api/SmartEnergyExpert.Api.csproj" />
+  </Folder>
+</Solution>
