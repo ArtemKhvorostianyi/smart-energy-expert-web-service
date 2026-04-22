@@ -72,6 +72,16 @@ Sample API flow:
 - `POST /api/experiments/{experimentId}/parameters`
 - `POST /api/experiments/{experimentId}/evaluation`
 
+Auth endpoint:
+
+- `POST /api/auth/login`
+
+Seeded demo credentials:
+
+- `admin@smartenergy.local` / `Admin123!`
+- `expert@smartenergy.local` / `Expert123!`
+- `operator@smartenergy.local` / `Operator123!`
+
 ## Ivy UI Bootstrap
 
 Current frontend status:
