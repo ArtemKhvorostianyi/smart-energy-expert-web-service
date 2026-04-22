@@ -65,6 +65,21 @@ dotnet build SmartEnergyExpert.slnx
 dotnet run --project server/SmartEnergyExpert.Api
 ```
 
+## Ivy UI Bootstrap
+
+Поточний стан frontend:
+
+- Ivy-проєкт у `client/`;
+- базові застосунки: `Dashboard`, `Experiments`, `Evaluations`;
+- стартова UX-структура під ролі Admin/Expert/Operator і сценарій оцінювання.
+
+Запуск UI:
+
+```bash
+cd client
+ivy run --browse
+```
+
 ## Статус
 
 Початковий етап: ініціалізація репозиторію та базової проєктної структури.
