@@ -75,12 +75,20 @@ Sample API flow:
 Auth endpoint:
 
 - `POST /api/auth/login`
+- `GET /api/auth/me` (requires bearer token)
 
 Seeded demo credentials:
 
 - `admin@smartenergy.local` / `Admin123!`
 - `expert@smartenergy.local` / `Expert123!`
 - `operator@smartenergy.local` / `Operator123!`
+
+Authorization model:
+
+- `Experiments` read: `Admin`, `Expert`, `Operator`
+- `Experiments` create and parameter edits: `Admin`, `Operator`
+- `Evaluations` execute: `Admin`, `Expert`
+- Use `Authorization: Bearer <token>` header for protected endpoints.
 
 ## Ivy UI Bootstrap
 
