@@ -1,4 +1,6 @@
+using System.Security.Claims;
 using BCrypt.Net;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SmartEnergyExpert.Api.Data;
@@ -39,6 +41,19 @@ public sealed class AuthController(AppDbContext dbContext, IJwtTokenService jwtT
             FullName = user.FullName,
             Email = user.Email,
             Role = user.Role.Name
+        });
+    }
+
+    [HttpGet("me")]
+    [Authorize]
+    public ActionResult<object> Me()
+    {
+        return Ok(new
+        {
+            UserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"),
+            FullName = User.FindFirstValue(ClaimTypes.Name),
+            Email = User.FindFirstValue(ClaimTypes.Email) ?? User.FindFirstValue("email"),
+            Role = User.FindFirstValue(ClaimTypes.Role)
         });
     }
 }

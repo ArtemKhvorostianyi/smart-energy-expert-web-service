@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SmartEnergyExpert.Api.Data;
@@ -8,6 +9,7 @@ namespace SmartEnergyExpert.Api.Controllers;
 
 [ApiController]
 [Route("api/experiments/{experimentId:guid}/parameters")]
+[Authorize]
 public sealed class ExperimentParametersController(AppDbContext dbContext) : ControllerBase
 {
     [HttpGet]
@@ -31,6 +33,7 @@ public sealed class ExperimentParametersController(AppDbContext dbContext) : Con
     }
 
     [HttpPost]
+    [Authorize(Roles = "Admin,Operator")]
     public async Task<ActionResult<ExperimentParameter>> Add(
         [FromRoute] Guid experimentId,
         [FromBody] AddExperimentParameterRequest request,
@@ -64,6 +67,7 @@ public sealed class ExperimentParametersController(AppDbContext dbContext) : Con
     }
 
     [HttpDelete("{parameterId:guid}")]
+    [Authorize(Roles = "Admin,Operator")]
     public async Task<IActionResult> Delete(
         [FromRoute] Guid experimentId,
         [FromRoute] Guid parameterId,

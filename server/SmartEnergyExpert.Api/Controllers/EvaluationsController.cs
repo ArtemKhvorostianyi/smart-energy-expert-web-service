@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SmartEnergyExpert.Api.Data;
@@ -9,6 +11,7 @@ namespace SmartEnergyExpert.Api.Controllers;
 
 [ApiController]
 [Route("api/experiments/{experimentId:guid}/evaluation")]
+[Authorize(Roles = "Admin,Expert")]
 public sealed class EvaluationsController(AppDbContext dbContext, IEvaluationService evaluationService) : ControllerBase
 {
     [HttpPost]
@@ -17,6 +20,12 @@ public sealed class EvaluationsController(AppDbContext dbContext, IEvaluationSer
         [FromBody] EvaluateExperimentRequest request,
         CancellationToken cancellationToken)
     {
+        var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (!Guid.TryParse(userIdClaim, out var expertId))
+        {
+            return Unauthorized("Unable to resolve expert id from token.");
+        }
+
         var experiment = await dbContext.Experiments
             .Include(x => x.Parameters)
             .FirstOrDefaultAsync(x => x.Id == experimentId, cancellationToken);
@@ -31,7 +40,7 @@ public sealed class EvaluationsController(AppDbContext dbContext, IEvaluationSer
         var evaluation = new Evaluation
         {
             ExperimentId = experimentId,
-            ExpertId = request.ExpertId,
+            ExpertId = expertId,
             IntegralScore = score,
             RiskLevel = riskLevel,
             Conclusion = request.Conclusion
