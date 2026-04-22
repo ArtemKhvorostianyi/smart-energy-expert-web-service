@@ -45,21 +45,21 @@ public sealed class DatabaseInitializer(IServiceProvider serviceProvider, ILogge
                 {
                     FullName = "System Admin",
                     Email = "admin@smartenergy.local",
-                    PasswordHash = "placeholder-hash",
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin123!"),
                     RoleId = roles["Admin"].Id
                 },
                 new User
                 {
                     FullName = "Lead Expert",
                     Email = "expert@smartenergy.local",
-                    PasswordHash = "placeholder-hash",
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("Expert123!"),
                     RoleId = roles["Expert"].Id
                 },
                 new User
                 {
                     FullName = "Field Operator",
                     Email = "operator@smartenergy.local",
-                    PasswordHash = "placeholder-hash",
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("Operator123!"),
                     RoleId = roles["Operator"].Id
                 }
             );
