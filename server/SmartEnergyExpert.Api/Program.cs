@@ -13,8 +13,15 @@ builder.Services.AddDbContext<AppDbContext>(options =>
         ?? "Host=localhost;Port=5432;Database=smart_energy_expert;Username=postgres;Password=postgres"));
 
 builder.Services.AddScoped<IEvaluationService, EvaluationService>();
+builder.Services.AddSingleton<DatabaseInitializer>();
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var initializer = scope.ServiceProvider.GetRequiredService<DatabaseInitializer>();
+    await initializer.InitializeAsync(CancellationToken.None);
+}
 
 if (app.Environment.IsDevelopment())
 {

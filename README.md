@@ -56,7 +56,8 @@ Current backend status:
 - `ASP.NET Core Web API` project in `server/SmartEnergyExpert.Api`;
 - configured `Entity Framework Core` + `PostgreSQL provider`;
 - core entities, `DbContext`, DTOs, and controllers: `Auth`, `Experiments`, `Evaluations`;
-- baseline `evaluation service` for score/risk/recommendation calculation.
+- baseline `evaluation service` for score/risk/recommendation calculation;
+- database bootstrap with initial role/user seed and `ExperimentParameters` API module.
 
 Run:
 
@@ -64,6 +65,12 @@ Run:
 dotnet build SmartEnergyExpert.slnx
 dotnet run --project server/SmartEnergyExpert.Api
 ```
+
+Sample API flow:
+
+- `POST /api/experiments`
+- `POST /api/experiments/{experimentId}/parameters`
+- `POST /api/experiments/{experimentId}/evaluation`
 
 ## Ivy UI Bootstrap
 

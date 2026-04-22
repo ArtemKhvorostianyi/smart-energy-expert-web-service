@@ -22,9 +22,45 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             .HasIndex(x => x.Email)
             .IsUnique();
 
+        modelBuilder.Entity<Experiment>()
+            .Property(x => x.Status)
+            .HasMaxLength(24);
+
+        modelBuilder.Entity<Experiment>()
+            .HasOne(x => x.Creator)
+            .WithMany()
+            .HasForeignKey(x => x.CreatedBy)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<ExperimentParameter>()
+            .HasOne(x => x.Experiment)
+            .WithMany(x => x.Parameters)
+            .HasForeignKey(x => x.ExperimentId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<Evaluation>()
+            .HasOne(x => x.Experiment)
+            .WithMany()
+            .HasForeignKey(x => x.ExperimentId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<Evaluation>()
+            .HasOne(x => x.Expert)
+            .WithMany()
+            .HasForeignKey(x => x.ExpertId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         modelBuilder.Entity<Recommendation>()
             .HasOne(x => x.Evaluation)
             .WithOne(x => x.Recommendation)
             .HasForeignKey<Recommendation>(x => x.EvaluationId);
+
+        modelBuilder.Entity<Recommendation>()
+            .HasIndex(x => x.EvaluationId)
+            .IsUnique();
+
+        modelBuilder.Entity<Evaluation>()
+            .Property(x => x.RiskLevel)
+            .HasMaxLength(24);
     }
 }
