@@ -13,8 +13,9 @@ public sealed class DatabaseInitializer(IServiceProvider serviceProvider, ILogge
             await using var scope = serviceProvider.CreateAsyncScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-            await dbContext.Database.EnsureCreatedAsync(cancellationToken);
+            await dbContext.Database.MigrateAsync(cancellationToken);
             await SeedRolesAndUsersAsync(dbContext, cancellationToken);
+            await SeedCriteriaAsync(dbContext, cancellationToken);
 
             logger.LogInformation("Database initialization completed.");
         }
@@ -66,5 +67,54 @@ public sealed class DatabaseInitializer(IServiceProvider serviceProvider, ILogge
 
             await dbContext.SaveChangesAsync(cancellationToken);
         }
+    }
+
+    private static async Task SeedCriteriaAsync(AppDbContext dbContext, CancellationToken cancellationToken)
+    {
+        if (await dbContext.Criteria.AnyAsync(cancellationToken))
+        {
+            return;
+        }
+
+        var criteria = new[]
+        {
+            new Criterion
+            {
+                Name = "temperature",
+                Description = "Observed equipment temperature",
+                MinValue = 0,
+                MaxValue = 120,
+                DefaultWeight = 0.35m
+            },
+            new Criterion
+            {
+                Name = "vibration",
+                Description = "Observed vibration level",
+                MinValue = 0,
+                MaxValue = 25,
+                DefaultWeight = 0.35m
+            },
+            new Criterion
+            {
+                Name = "pressure",
+                Description = "Observed pressure level",
+                MinValue = 0,
+                MaxValue = 16,
+                DefaultWeight = 0.30m
+            }
+        };
+
+        dbContext.Criteria.AddRange(criteria);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        var weights = criteria.Select(x => new CriterionWeight
+        {
+            CriterionId = x.Id,
+            ExperimentType = "default",
+            Weight = x.DefaultWeight
+        });
+
+        dbContext.CriterionWeights.AddRange(weights);
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 }

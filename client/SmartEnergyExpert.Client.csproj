@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -7,6 +7,7 @@
     <Nullable>enable</Nullable>
     <NoWarn>CS8618;CS8603;CS8602;CS8604;CS9113</NoWarn>
     <RootNamespace>SmartEnergyExpert.Client</RootNamespace>
+    <UserSecretsId>03030688-4c86-4c62-a220-b33990e42738</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

@@ -35,7 +35,26 @@ public sealed class EvaluationsController(AppDbContext dbContext, IEvaluationSer
             return NotFound($"Experiment '{experimentId}' was not found.");
         }
 
-        var (score, riskLevel, recommendationText) = evaluationService.Calculate(experiment);
+        var activeCriteria = await dbContext.Criteria
+            .AsNoTracking()
+            .Where(x => x.IsActive)
+            .ToListAsync(cancellationToken);
+
+        var criteriaIds = activeCriteria.Select(x => x.Id).ToArray();
+
+        var configuredWeights = await dbContext.CriterionWeights
+            .AsNoTracking()
+            .Where(x => x.IsActive
+                && criteriaIds.Contains(x.CriterionId)
+                && (x.ExperimentType == experiment.ExperimentType || x.ExperimentType == "default"))
+            .OrderByDescending(x => x.ExperimentType == experiment.ExperimentType)
+            .ToListAsync(cancellationToken);
+
+        var weightMap = configuredWeights
+            .GroupBy(x => x.CriterionId)
+            .ToDictionary(x => x.Key, x => x.First().Weight);
+
+        var (score, riskLevel, recommendationText) = evaluationService.Calculate(experiment, activeCriteria, weightMap);
 
         var evaluation = new Evaluation
         {

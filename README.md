@@ -17,7 +17,7 @@ Build a scalable and secure web service that:
 - Frontend: Ivy Framework
 - Database: PostgreSQL
 - ORM: Entity Framework Core
-- Auth: JWT + ASP.NET Identity
+- Auth: Ivy Basic Auth (client app access control)
 
 ## User Roles
 
@@ -72,23 +72,12 @@ Sample API flow:
 - `POST /api/experiments/{experimentId}/parameters`
 - `POST /api/experiments/{experimentId}/evaluation`
 
-Auth endpoint:
+Ivy authentication setup:
 
-- `POST /api/auth/login`
-- `GET /api/auth/me` (requires bearer token)
-
-Seeded demo credentials:
-
-- `admin@smartenergy.local` / `Admin123!`
-- `expert@smartenergy.local` / `Expert123!`
-- `operator@smartenergy.local` / `Operator123!`
-
-Authorization model:
-
-- `Experiments` read: `Admin`, `Expert`, `Operator`
-- `Experiments` create and parameter edits: `Admin`, `Operator`
-- `Evaluations` execute: `Admin`, `Expert`
-- Use `Authorization: Bearer <token>` header for protected endpoints.
+- `client/Program.cs` uses `server.UseAuth<BasicAuthProvider>()`.
+- Configure credentials interactively in the `client` folder:
+  - `ivy auth add --provider Basic`
+- Ivy stores generated secrets in .NET user-secrets for local development.
 
 ## Ivy UI Bootstrap
 
