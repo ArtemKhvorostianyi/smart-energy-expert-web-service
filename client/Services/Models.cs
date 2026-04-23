@@ -63,6 +63,51 @@ public sealed class ExperimentDto
     public DateTimeOffset CreatedAt { get; init; }
 }
 
+public sealed class ExperimentParameterDto
+{
+    [JsonPropertyName("id")]
+    public Guid Id { get; init; }
+
+    [JsonPropertyName("experimentId")]
+    public Guid ExperimentId { get; init; }
+
+    [JsonPropertyName("parameterName")]
+    public string ParameterName { get; init; } = string.Empty;
+
+    [JsonPropertyName("value")]
+    public decimal Value { get; init; }
+
+    [JsonPropertyName("unit")]
+    public string Unit { get; init; } = string.Empty;
+
+    [JsonPropertyName("minAcceptable")]
+    public decimal? MinAcceptable { get; init; }
+
+    [JsonPropertyName("maxAcceptable")]
+    public decimal? MaxAcceptable { get; init; }
+
+    [JsonPropertyName("weight")]
+    public decimal? Weight { get; init; }
+
+    [JsonPropertyName("category")]
+    public string Category { get; init; } = "physical";
+
+    [JsonPropertyName("description")]
+    public string? Description { get; init; }
+
+    [JsonPropertyName("isCritical")]
+    public bool IsCritical { get; init; }
+
+    [JsonPropertyName("source")]
+    public string Source { get; init; } = "manual";
+
+    [JsonPropertyName("measuredAt")]
+    public DateTimeOffset? MeasuredAt { get; init; }
+
+    [JsonPropertyName("createdAt")]
+    public DateTimeOffset CreatedAt { get; init; }
+}
+
 public sealed class CreateExperimentRequestDto
 {
     [JsonPropertyName("title")]

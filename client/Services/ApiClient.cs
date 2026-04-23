@@ -8,6 +8,7 @@ namespace SmartEnergyExpert.Client.Services;
 public interface IApiClient
 {
     Task<IReadOnlyList<ExperimentDto>> GetExperimentsAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ExperimentParameterDto>> GetParametersAsync(Guid experimentId, CancellationToken cancellationToken = default);
     Task<ExperimentDto> CreateExperimentAsync(CreateExperimentRequestDto request, CancellationToken cancellationToken = default);
     Task AddParameterAsync(Guid experimentId, AddParameterRequestDto request, CancellationToken cancellationToken = default);
     Task<EvaluationResultDto> EvaluateAsync(Guid experimentId, string? conclusion, CancellationToken cancellationToken = default);
@@ -57,6 +58,16 @@ public sealed class ApiClient : IApiClient
 
         return await response.Content.ReadFromJsonAsync<ExperimentDto>(JsonOptions, cancellationToken)
             ?? throw new InvalidOperationException("Create experiment response payload is empty.");
+    }
+
+    public async Task<IReadOnlyList<ExperimentParameterDto>> GetParametersAsync(Guid experimentId, CancellationToken cancellationToken = default)
+    {
+        await EnsureBackendAuthorizedAsync(cancellationToken);
+        var data = await _httpClient.GetFromJsonAsync<List<ExperimentParameterDto>>(
+            $"api/experiments/{experimentId}/parameters",
+            JsonOptions,
+            cancellationToken);
+        return data ?? [];
     }
 
     public async Task AddParameterAsync(Guid experimentId, AddParameterRequestDto request, CancellationToken cancellationToken = default)
