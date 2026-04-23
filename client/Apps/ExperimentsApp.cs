@@ -15,33 +15,33 @@ public sealed class ExperimentsApp : ViewBase
 
     private static readonly ParameterPreset[] ParameterPresets =
     [
-        new("temperature", "Temperature", "C", ["C", "F", "K"], 22m, 10m, 25m, 0.20m, "physical", false),
-        new("pressure", "Pressure", "kPa", ["kPa", "bar", "atm", "Pa"], 101.3m, 95m, 110m, 0.18m, "physical", false),
-        new("voltage", "Voltage", "V", ["V", "kV"], 230m, 210m, 240m, 0.20m, "electrical", true),
-        new("current", "Current", "A", ["A", "mA"], 8m, 0m, 12m, 0.18m, "electrical", true),
-        new("power", "Power", "kW", ["W", "kW", "MW"], 5m, 1m, 8m, 0.17m, "electrical", false),
-        new("frequency", "Frequency", "Hz", ["Hz", "kHz"], 50m, 49m, 51m, 0.15m, "electrical", false),
-        new("vibration", "Vibration", "mm/s", ["mm/s", "m/s"], 2.5m, 0m, 4.5m, 0.14m, "reliability", false),
-        new("rotation_speed", "Rotation Speed", "rpm", ["rpm", "rps"], 1500m, 1200m, 1800m, 0.12m, "physical", false),
-        new("humidity", "Humidity", "%", ["%"], 45m, 30m, 70m, 0.10m, "physical", false),
-        new("coolant_level", "Coolant Level", "%", ["%"], 75m, 40m, 100m, 0.16m, "physical", true),
-        new("operating_hours", "Operating Hours", "h", ["h", "days"], 1200m, 0m, 20000m, 0.08m, "reliability", false),
-        new("failure_count", "Failure Count", "count", ["count"], 0m, 0m, 3m, 0.16m, "reliability", true),
-        new("last_maintenance_days", "Last Maintenance Days", "days", ["days", "h"], 20m, 0m, 90m, 0.11m, "reliability", false),
-        new("wear_level", "Wear Level", "%", ["%"], 15m, 0m, 60m, 0.13m, "reliability", false),
-        new("sensor_health", "Sensor Health", "%", ["%"], 95m, 70m, 100m, 0.14m, "reliability", true),
-        new("component_load_percent", "Component Load Percent", "%", ["%"], 60m, 20m, 90m, 0.12m, "reliability", false),
-        new("packet_loss", "Packet Loss", "%", ["%"], 0.2m, 0m, 2m, 0.18m, "network", true),
-        new("latency_ms", "Latency", "ms", ["ms", "s"], 20m, 0m, 100m, 0.16m, "network", false),
-        new("unauthorized_access_attempts", "Unauthorized Access Attempts", "count", ["count"], 0m, 0m, 1m, 0.20m, "network", true),
-        new("communication_status", "Communication Status", "score", ["score"], 1m, 0m, 1m, 0.14m, "network", true),
-        new("data_integrity_score", "Data Integrity Score", "%", ["%"], 99m, 90m, 100m, 0.17m, "network", true),
-        new("system_response_time", "System Response Time", "ms", ["ms", "s"], 120m, 0m, 600m, 0.13m, "network", false),
-        new("expert_confidence", "Expert Confidence", "%", ["%"], 85m, 50m, 100m, 0.09m, "expert", false),
-        new("anomaly_level", "Anomaly Level", "score", ["score"], 0.2m, 0m, 1m, 0.15m, "expert", true),
-        new("risk_probability", "Risk Probability", "%", ["%"], 12m, 0m, 100m, 0.18m, "expert", true),
-        new("impact_level", "Impact Level", "score", ["score"], 2m, 1m, 5m, 0.16m, "expert", true),
-        new("decision_priority", "Decision Priority", "score", ["score"], 3m, 1m, 5m, 0.14m, "expert", false)
+        new("temperature", "Temperature", "C", ["C", "F", "K"], 22m, 10m, 25m, 0.20m, "physical", "sensor", false),
+        new("pressure", "Pressure", "kPa", ["kPa", "bar", "atm", "Pa"], 101.3m, 95m, 110m, 0.18m, "physical", "sensor", false),
+        new("voltage", "Voltage", "V", ["V", "kV"], 230m, 210m, 240m, 0.20m, "electrical", "sensor", true),
+        new("current", "Current", "A", ["A", "mA"], 8m, 0m, 12m, 0.18m, "electrical", "sensor", true),
+        new("power", "Power", "kW", ["W", "kW", "MW"], 5m, 1m, 8m, 0.17m, "electrical", "sensor", false),
+        new("frequency", "Frequency", "Hz", ["Hz", "kHz"], 50m, 49m, 51m, 0.15m, "electrical", "sensor", false),
+        new("vibration", "Vibration", "mm/s", ["mm/s", "m/s"], 2.5m, 0m, 4.5m, 0.14m, "reliability", "sensor", false),
+        new("rotation_speed", "Rotation Speed", "rpm", ["rpm", "rps"], 1500m, 1200m, 1800m, 0.12m, "physical", "sensor", false),
+        new("humidity", "Humidity", "%", ["%"], 45m, 30m, 70m, 0.10m, "physical", "sensor", false),
+        new("coolant_level", "Coolant Level", "%", ["%"], 75m, 40m, 100m, 0.16m, "physical", "sensor", true),
+        new("operating_hours", "Operating Hours", "h", ["h", "days"], 1200m, 0m, 20000m, 0.08m, "reliability", "api", false),
+        new("failure_count", "Failure Count", "count", ["count"], 0m, 0m, 3m, 0.16m, "reliability", "api", true),
+        new("last_maintenance_days", "Last Maintenance Days", "days", ["days", "h"], 20m, 0m, 90m, 0.11m, "reliability", "api", false),
+        new("wear_level", "Wear Level", "%", ["%"], 15m, 0m, 60m, 0.13m, "reliability", "api", false),
+        new("sensor_health", "Sensor Health", "%", ["%"], 95m, 70m, 100m, 0.14m, "reliability", "api", true),
+        new("component_load_percent", "Component Load Percent", "%", ["%"], 60m, 20m, 90m, 0.12m, "reliability", "api", false),
+        new("packet_loss", "Packet Loss", "%", ["%"], 0.2m, 0m, 2m, 0.18m, "network", "api", true),
+        new("latency_ms", "Latency", "ms", ["ms", "s"], 20m, 0m, 100m, 0.16m, "network", "api", false),
+        new("unauthorized_access_attempts", "Unauthorized Access Attempts", "count", ["count"], 0m, 0m, 1m, 0.20m, "network", "api", true),
+        new("communication_status", "Communication Status", "score", ["score"], 1m, 0m, 1m, 0.14m, "network", "api", true),
+        new("data_integrity_score", "Data Integrity Score", "%", ["%"], 99m, 90m, 100m, 0.17m, "network", "api", true),
+        new("system_response_time", "System Response Time", "ms", ["ms", "s"], 120m, 0m, 600m, 0.13m, "network", "api", false),
+        new("expert_confidence", "Expert Confidence", "%", ["%"], 85m, 50m, 100m, 0.09m, "expert", "manual", false),
+        new("anomaly_level", "Anomaly Level", "score", ["score"], 0.2m, 0m, 1m, 0.15m, "expert", "manual", true),
+        new("risk_probability", "Risk Probability", "%", ["%"], 12m, 0m, 100m, 0.18m, "expert", "manual", true),
+        new("impact_level", "Impact Level", "score", ["score"], 2m, 1m, 5m, 0.16m, "expert", "manual", true),
+        new("decision_priority", "Decision Priority", "score", ["score"], 3m, 1m, 5m, 0.14m, "expert", "manual", false)
     ];
 
     private static readonly string[] ParameterNameOptions = ParameterPresets.Select(x => x.Label).ToArray();
@@ -70,6 +70,7 @@ public sealed class ExperimentsApp : ViewBase
             var parameterUnit = UseState(ParameterPresets[0].DefaultUnit);
             var parameterCategory = UseState(ParameterPresets[0].DefaultCategory);
             var parameterSource = UseState(SourceOptions[1]);
+            var manualMetadataOverride = UseState(false);
             var parameterDescription = UseState("");
             var parameterMin = UseState(ParameterPresets[0].DefaultMin);
             var parameterMax = UseState(ParameterPresets[0].DefaultMax);
@@ -86,8 +87,12 @@ public sealed class ExperimentsApp : ViewBase
                         | parameterValue.ToNumberInput().Placeholder("Value")
                         | parameterUnit.ToSelectInput(ResolvePreset(parameterName.Value).Units)
                         | parameterDescription.ToTextInput().Placeholder("Description (optional)")
-                        | parameterCategory.ToSelectInput(CategoryOptions)
-                        | parameterSource.ToSelectInput(SourceOptions)
+                        | manualMetadataOverride.ToBoolInput().Label("Override category/source manually")
+                        | (manualMetadataOverride.Value
+                            ? Layout.Vertical()
+                                | parameterCategory.ToSelectInput(CategoryOptions)
+                                | parameterSource.ToSelectInput(SourceOptions)
+                            : Text.Muted($"Category: {parameterCategory.Value} | Source: {parameterSource.Value} (auto from template)"))
                         | isCritical.ToBoolInput().Label("Critical parameter")
                         | useDefaultThresholds.ToBoolInput().Label("Use criteria defaults for min/max/weight")
                         | (useDefaultThresholds.Value
@@ -130,11 +135,13 @@ public sealed class ExperimentsApp : ViewBase
                 parameterValue.Set(preset.DefaultValue);
                 parameterUnit.Set(preset.DefaultUnit);
                 parameterCategory.Set(preset.DefaultCategory);
+                parameterSource.Set(preset.DefaultSource);
                 parameterMin.Set(preset.DefaultMin);
                 parameterMax.Set(preset.DefaultMax);
                 parameterWeight.Set(preset.DefaultWeight);
                 isCritical.Set(preset.DefaultCritical);
                 previousUnit.Set(preset.DefaultUnit);
+                manualMetadataOverride.Set(false);
             }, parameterName);
 
             UseEffect(() =>
@@ -280,6 +287,7 @@ public sealed class ExperimentsApp : ViewBase
         decimal DefaultMax,
         decimal DefaultWeight,
         string DefaultCategory,
+        string DefaultSource,
         bool DefaultCritical);
 
     private static ParameterPreset ResolvePreset(string label) =>
