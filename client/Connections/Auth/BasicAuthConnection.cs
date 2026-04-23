@@ -26,7 +26,10 @@ public class BasicAuthConnection : IConnection, IHaveSecrets
         new("BasicAuth:HashSecret"),
         new("BasicAuth:JwtSecret"),
         new("BasicAuth:JwtIssuer"),
-        new("BasicAuth:JwtAudience")
+        new("BasicAuth:JwtAudience"),
+        new("BackendApi:BaseUrl"),
+        new("BackendApi:Email"),
+        new("BackendApi:Password")
     ];
 
     public async Task<(bool ok, string? message)> TestConnection(IConfiguration config)
