@@ -41,6 +41,17 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             .HasForeignKey(x => x.ExperimentId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        modelBuilder.Entity<ExperimentParameter>()
+            .Property(x => x.Category)
+            .HasMaxLength(40);
+
+        modelBuilder.Entity<ExperimentParameter>()
+            .Property(x => x.Source)
+            .HasMaxLength(40);
+
+        modelBuilder.Entity<ExperimentParameter>()
+            .ToTable(x => x.HasCheckConstraint("CK_ExperimentParameters_Weight", "\"Weight\" IS NULL OR \"Weight\" > 0"));
+
         modelBuilder.Entity<Criterion>()
             .HasIndex(x => x.Name)
             .IsUnique();
@@ -93,6 +104,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         modelBuilder.Entity<Evaluation>()
             .Property(x => x.RiskLevel)
             .HasMaxLength(24);
+
+        modelBuilder.Entity<Evaluation>()
+            .Property(x => x.Status)
+            .HasMaxLength(32);
 
         modelBuilder.Entity<AuditLog>()
             .HasOne(x => x.User)

@@ -56,7 +56,15 @@ public sealed class EvaluationsApp : ViewBase
                        | Text.H3("Latest Result")
                        | Text.Block($"Score: {latestResult.Value.IntegralScore:F4}")
                        | Text.Block($"Risk: {latestResult.Value.RiskLevel}")
+                       | Text.Block($"Status: {latestResult.Value.Status}")
                        | Text.Block($"Recommendation: {latestResult.Value.Recommendation}")))
+               | (latestResult.Value is null || string.IsNullOrWhiteSpace(latestResult.Value.Explanation)
+                   ? new Fragment()
+                   : new Card(
+                       Layout.Vertical()
+                       | Text.H3("Explanation")
+                       | Text.Block(latestResult.Value.Explanation)
+                       | Text.Block($"Top factors: {(latestResult.Value.TopFactors.Length == 0 ? "none" : string.Join(", ", latestResult.Value.TopFactors))}")))
                | Text.H3("History")
                | (experimentsQuery.Loading
                    ? Skeleton.Card()

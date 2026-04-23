@@ -89,6 +89,27 @@ public sealed class AddParameterRequestDto
     [JsonPropertyName("unit")]
     public string Unit { get; init; } = string.Empty;
 
+    [JsonPropertyName("minAcceptable")]
+    public decimal? MinAcceptable { get; init; }
+
+    [JsonPropertyName("maxAcceptable")]
+    public decimal? MaxAcceptable { get; init; }
+
+    [JsonPropertyName("weight")]
+    public decimal? Weight { get; init; }
+
+    [JsonPropertyName("category")]
+    public string Category { get; init; } = "physical";
+
+    [JsonPropertyName("description")]
+    public string? Description { get; init; }
+
+    [JsonPropertyName("isCritical")]
+    public bool IsCritical { get; init; }
+
+    [JsonPropertyName("source")]
+    public string Source { get; init; } = "manual";
+
     [JsonPropertyName("measuredAt")]
     public DateTimeOffset? MeasuredAt { get; init; }
 }
@@ -112,5 +133,14 @@ public sealed class EvaluationResultDto
 
     [JsonPropertyName("recommendation")]
     public string Recommendation { get; init; } = string.Empty;
+
+    [JsonPropertyName("explanation")]
+    public string Explanation { get; init; } = string.Empty;
+
+    [JsonPropertyName("topFactors")]
+    public string[] TopFactors { get; init; } = [];
+
+    [JsonPropertyName("status")]
+    public string Status { get; init; } = string.Empty;
 }
 
