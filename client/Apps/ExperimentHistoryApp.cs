@@ -47,9 +47,13 @@ public sealed class ExperimentHistoryDetailsBlade(SmartEnergyExpert.Client.Servi
     {
         var apiClient = UseService<SmartEnergyExpert.Client.Services.IApiClient>();
         var blades = UseContext<IBladeContext>();
+        var latestEvaluationQuery = UseQuery(
+            key: (nameof(ExperimentHistoryDetailsBlade), "latest-evaluation", experiment.Id),
+            fetcher: async ct => await apiClient.GetLatestEvaluationAsync(experiment.Id, ct));
         var parametersQuery = UseQuery(
             key: (nameof(ExperimentHistoryDetailsBlade), experiment.Id),
             fetcher: async ct => await apiClient.GetParametersAsync(experiment.Id, ct));
+        var latestEvaluation = latestEvaluationQuery.Value;
         var parameters = parametersQuery.Value ?? [];
 
         return Layout.Vertical().Padding(4).Gap(2)
@@ -63,6 +67,23 @@ public sealed class ExperimentHistoryDetailsBlade(SmartEnergyExpert.Client.Servi
                    experiment.Description,
                    experiment.CreatedAt
                }.ToDetails().RemoveEmpty().Multiline(x => x.Description).Builder(x => x.Id, b => b.CopyToClipboard())
+               | Text.H3("Latest Evaluation")
+               | (latestEvaluationQuery.Loading
+                   ? Skeleton.Card()
+                   : latestEvaluationQuery.Error is { } evalErr
+                       ? Callout.Warning($"Failed to load evaluation: {evalErr.Message}")
+                       : latestEvaluation is null
+                           ? Text.Muted("This experiment has not been evaluated yet.")
+                           : new
+                           {
+                               latestEvaluation.IntegralScore,
+                               latestEvaluation.RiskLevel,
+                               latestEvaluation.Status,
+                               latestEvaluation.Recommendation,
+                               latestEvaluation.Explanation,
+                               TopFactors = latestEvaluation.TopFactors.Length == 0 ? "none" : string.Join(", ", latestEvaluation.TopFactors),
+                               latestEvaluation.EvaluatedAt
+                           }.ToDetails().Multiline(x => x.Explanation).Multiline(x => x.TopFactors))
                | Text.H3("Parameters")
                | (parametersQuery.Loading
                    ? Skeleton.Card()

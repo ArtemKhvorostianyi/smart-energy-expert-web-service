@@ -9,6 +9,7 @@ public interface IApiClient
 {
     Task<IReadOnlyList<ExperimentDto>> GetExperimentsAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ExperimentParameterDto>> GetParametersAsync(Guid experimentId, CancellationToken cancellationToken = default);
+    Task<EvaluationResultDto?> GetLatestEvaluationAsync(Guid experimentId, CancellationToken cancellationToken = default);
     Task<ExperimentDto> CreateExperimentAsync(CreateExperimentRequestDto request, CancellationToken cancellationToken = default);
     Task AddParameterAsync(Guid experimentId, AddParameterRequestDto request, CancellationToken cancellationToken = default);
     Task<EvaluationResultDto> EvaluateAsync(Guid experimentId, string? conclusion, CancellationToken cancellationToken = default);
@@ -68,6 +69,20 @@ public sealed class ApiClient : IApiClient
             JsonOptions,
             cancellationToken);
         return data ?? [];
+    }
+
+    public async Task<EvaluationResultDto?> GetLatestEvaluationAsync(Guid experimentId, CancellationToken cancellationToken = default)
+    {
+        await EnsureBackendAuthorizedAsync(cancellationToken);
+
+        var response = await _httpClient.GetAsync($"api/experiments/{experimentId}/evaluation/latest", cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<EvaluationResultDto>(JsonOptions, cancellationToken);
     }
 
     public async Task AddParameterAsync(Guid experimentId, AddParameterRequestDto request, CancellationToken cancellationToken = default)
