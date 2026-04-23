@@ -5,6 +5,7 @@ UI application built with Ivy Framework for the diploma project.
 ## Run locally
 
 ```bash
+ivy auth add --provider Basic
 ivy run --browse
 ```
 

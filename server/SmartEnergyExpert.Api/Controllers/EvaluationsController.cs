@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using SmartEnergyExpert.Api.Data;
 using SmartEnergyExpert.Api.DTOs;
 using SmartEnergyExpert.Api.Entities;
@@ -35,22 +36,44 @@ public sealed class EvaluationsController(AppDbContext dbContext, IEvaluationSer
             return NotFound($"Experiment '{experimentId}' was not found.");
         }
 
-        var (score, riskLevel, recommendationText) = evaluationService.Calculate(experiment);
+        var activeCriteria = await dbContext.Criteria
+            .AsNoTracking()
+            .Where(x => x.IsActive)
+            .ToListAsync(cancellationToken);
+
+        var criteriaIds = activeCriteria.Select(x => x.Id).ToArray();
+
+        var configuredWeights = await dbContext.CriterionWeights
+            .AsNoTracking()
+            .Where(x => x.IsActive
+                && criteriaIds.Contains(x.CriterionId)
+                && (x.ExperimentType == experiment.ExperimentType || x.ExperimentType == "default"))
+            .OrderByDescending(x => x.ExperimentType == experiment.ExperimentType)
+            .ToListAsync(cancellationToken);
+
+        var weightMap = configuredWeights
+            .GroupBy(x => x.CriterionId)
+            .ToDictionary(x => x.Key, x => x.First().Weight);
+
+        var result = evaluationService.Calculate(experiment, activeCriteria, weightMap);
 
         var evaluation = new Evaluation
         {
             ExperimentId = experimentId,
             ExpertId = expertId,
-            IntegralScore = score,
-            RiskLevel = riskLevel,
-            Conclusion = request.Conclusion
+            IntegralScore = result.Score,
+            RiskLevel = result.RiskLevel,
+            Conclusion = request.Conclusion,
+            Explanation = result.Explanation,
+            TopFactors = JsonSerializer.Serialize(result.TopFactors),
+            Status = result.Status
         };
 
         var recommendation = new Recommendation
         {
             Evaluation = evaluation,
-            DecisionText = recommendationText,
-            Priority = riskLevel switch
+            DecisionText = result.Recommendation,
+            Priority = result.RiskLevel switch
             {
                 "critical" => 1,
                 "high" => 2,
@@ -69,9 +92,12 @@ public sealed class EvaluationsController(AppDbContext dbContext, IEvaluationSer
         return Ok(new EvaluationResultResponse
         {
             EvaluationId = evaluation.Id,
-            IntegralScore = score,
-            RiskLevel = riskLevel,
-            Recommendation = recommendationText
+            IntegralScore = result.Score,
+            RiskLevel = result.RiskLevel,
+            Recommendation = result.Recommendation,
+            Explanation = result.Explanation,
+            TopFactors = result.TopFactors.ToArray(),
+            Status = result.Status
         });
     }
 }

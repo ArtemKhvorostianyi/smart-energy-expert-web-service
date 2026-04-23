@@ -8,6 +8,9 @@ public sealed class Evaluation
     public decimal IntegralScore { get; set; }
     public string RiskLevel { get; set; } = "low";
     public string? Conclusion { get; set; }
+    public string? Explanation { get; set; }
+    public string? TopFactors { get; set; }
+    public string Status { get; set; } = "requires_attention";
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     public Experiment? Experiment { get; set; }

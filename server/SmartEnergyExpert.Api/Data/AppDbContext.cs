@@ -9,8 +9,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<Experiment> Experiments => Set<Experiment>();
     public DbSet<ExperimentParameter> ExperimentParameters => Set<ExperimentParameter>();
+    public DbSet<Criterion> Criteria => Set<Criterion>();
+    public DbSet<CriterionWeight> CriterionWeights => Set<CriterionWeight>();
     public DbSet<Evaluation> Evaluations => Set<Evaluation>();
     public DbSet<Recommendation> Recommendations => Set<Recommendation>();
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -38,6 +41,45 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             .HasForeignKey(x => x.ExperimentId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        modelBuilder.Entity<ExperimentParameter>()
+            .Property(x => x.Category)
+            .HasMaxLength(40);
+
+        modelBuilder.Entity<ExperimentParameter>()
+            .Property(x => x.Source)
+            .HasMaxLength(40);
+
+        modelBuilder.Entity<ExperimentParameter>()
+            .ToTable(x => x.HasCheckConstraint("CK_ExperimentParameters_Weight", "\"Weight\" IS NULL OR \"Weight\" > 0"));
+
+        modelBuilder.Entity<Criterion>()
+            .HasIndex(x => x.Name)
+            .IsUnique();
+
+        modelBuilder.Entity<Criterion>()
+            .Property(x => x.Name)
+            .HasMaxLength(120);
+
+        modelBuilder.Entity<Criterion>()
+            .ToTable(x =>
+            {
+                x.HasCheckConstraint("CK_Criteria_Range", "\"MinValue\" < \"MaxValue\"");
+                x.HasCheckConstraint("CK_Criteria_DefaultWeight", "\"DefaultWeight\" > 0");
+            });
+
+        modelBuilder.Entity<CriterionWeight>()
+            .HasOne(x => x.Criterion)
+            .WithMany(x => x.CriterionWeights)
+            .HasForeignKey(x => x.CriterionId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<CriterionWeight>()
+            .HasIndex(x => new { x.CriterionId, x.ExperimentType })
+            .IsUnique();
+
+        modelBuilder.Entity<CriterionWeight>()
+            .ToTable(x => x.HasCheckConstraint("CK_CriterionWeights_Weight", "\"Weight\" > 0"));
+
         modelBuilder.Entity<Evaluation>()
             .HasOne(x => x.Experiment)
             .WithMany()
@@ -62,5 +104,15 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         modelBuilder.Entity<Evaluation>()
             .Property(x => x.RiskLevel)
             .HasMaxLength(24);
+
+        modelBuilder.Entity<Evaluation>()
+            .Property(x => x.Status)
+            .HasMaxLength(32);
+
+        modelBuilder.Entity<AuditLog>()
+            .HasOne(x => x.User)
+            .WithMany()
+            .HasForeignKey(x => x.UserId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }
