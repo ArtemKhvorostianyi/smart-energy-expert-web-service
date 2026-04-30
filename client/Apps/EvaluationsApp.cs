@@ -6,15 +6,24 @@ public sealed class EvaluationsApp : ViewBase
     public override object? Build()
     {
         var apiClient = UseService<SmartEnergyExpert.Client.Services.IApiClient>();
+        var refreshTick = UseState(0);
         var selectedSimulation = UseState("");
         var selectedField = UseState("");
         var statusMessage = UseState("");
         var latestResult = UseState<SmartEnergyExpert.Client.Services.ComparisonResultDto?>(null);
+        var newDatasetName = UseState("");
+        var newDatasetType = UseState("simulation");
+        var newDatasetSource = UseState("manual");
+        var newDatasetVersion = UseState("v1");
+        var importDataset = UseState("");
 
-        var datasetsQuery = UseQuery(key: nameof(EvaluationsApp), fetcher: async ct => await apiClient.GetDatasetsAsync(ct));
+        var datasetsQuery = UseQuery(
+            key: (nameof(EvaluationsApp), refreshTick.Value),
+            fetcher: async ct => await apiClient.GetDatasetsAsync(ct));
         var datasets = datasetsQuery.Value ?? [];
         var simulationOptions = datasets.Where(x => x.Type == "simulation").Select(ToOption).ToArray();
         var fieldOptions = datasets.Where(x => x.Type == "field").Select(ToOption).ToArray();
+        var allDatasetOptions = datasets.Select(ToOption).ToArray();
         var canRunComparison =
             !datasetsQuery.Loading &&
             simulationOptions.Length > 0 &&
@@ -25,6 +34,65 @@ public sealed class EvaluationsApp : ViewBase
         return Layout.Vertical().Gap(2)
                | Text.H2("Hydroacoustic Model vs Field Comparison")
                | Text.Muted("Compare modeled and field hydroacoustic signals, then review metric interpretation and actionable recommendations.")
+               | new Card(
+                   Layout.Vertical()
+                   | Text.H3("Data Management")
+                   | Text.Muted("Create new dataset or import sample CSV rows into an existing dataset.")
+                   | newDatasetName.ToTextInput().Placeholder("Dataset name")
+                   | newDatasetType.ToSelectInput(["simulation", "field"])
+                   | newDatasetSource.ToTextInput().Placeholder("Source system, e.g. swellex, ut-austin, manual")
+                   | newDatasetVersion.ToTextInput().Placeholder("Version, e.g. v1")
+                   | new Button("Create Dataset")
+                       .OnClick(async () =>
+                       {
+                           try
+                           {
+                               if (string.IsNullOrWhiteSpace(newDatasetName.Value))
+                               {
+                                   statusMessage.Set("Dataset name is required.");
+                                   return;
+                               }
+
+                               await apiClient.CreateDatasetAsync(new SmartEnergyExpert.Client.Services.CreateDatasetRequestDto
+                               {
+                                   Name = newDatasetName.Value.Trim(),
+                                   Type = newDatasetType.Value,
+                                   SourceSystem = newDatasetSource.Value.Trim(),
+                                   Version = newDatasetVersion.Value.Trim()
+                               });
+                               newDatasetName.Set("");
+                               statusMessage.Set("Dataset created.");
+                               refreshTick.Set(refreshTick.Value + 1);
+                           }
+                           catch (Exception ex)
+                           {
+                               statusMessage.Set($"Create dataset failed: {ex.Message}");
+                           }
+                       })
+                   | (allDatasetOptions.Length == 0
+                       ? Text.Muted("No datasets yet for CSV import.")
+                       : importDataset.ToSelectInput(allDatasetOptions))
+                   | new Button("Import Sample CSV into Selected Dataset")
+                       .OnClick(async () =>
+                       {
+                           try
+                           {
+                               if (string.IsNullOrWhiteSpace(importDataset.Value))
+                               {
+                                   statusMessage.Set("Select a dataset for CSV import.");
+                                   return;
+                               }
+
+                               var datasetId = ParseDatasetId(importDataset.Value);
+                               var imported = await apiClient.ImportCsvSamplesAsync(datasetId, BuildSampleCsv());
+                               statusMessage.Set($"CSV import completed. Imported rows: {imported}.");
+                               refreshTick.Set(refreshTick.Value + 1);
+                           }
+                           catch (Exception ex)
+                           {
+                               statusMessage.Set($"CSV import failed: {ex.Message}");
+                           }
+                       }))
                | new Card(
                    Layout.Vertical()
                    | Text.H3("Dataset Selection")
@@ -154,4 +222,22 @@ public sealed class EvaluationsApp : ViewBase
             "ENVIRONMENT_VARIANCE" => "Environment mismatch suspected",
             _ => code
         };
+
+    private static string BuildSampleCsv()
+    {
+        var start = DateTimeOffset.UtcNow.AddMinutes(-10);
+        var rows = new List<string>
+        {
+            "timestamp,frequencyBand,amplitudeDb,depthMeters,rangeMeters,soundSpeed,noiseLevelDb"
+        };
+
+        for (var i = 0; i < 10; i++)
+        {
+            var timestamp = start.AddMinutes(i).ToString("o");
+            rows.Add($"{timestamp},400,{-71 + i * 0.1m:F3},60,{1000 + i * 10},1498.0,-89.0");
+            rows.Add($"{timestamp},800,{-69 + i * 0.1m:F3},60,{1000 + i * 10},1498.1,-88.5");
+        }
+
+        return string.Join("\n", rows);
+    }
 }

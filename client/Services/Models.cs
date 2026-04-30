@@ -59,6 +59,21 @@ public sealed class CreateComparisonRequestDto
     public int TopN { get; init; } = 20;
 }
 
+public sealed class CreateDatasetRequestDto
+{
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = string.Empty;
+
+    [JsonPropertyName("type")]
+    public string Type { get; init; } = "simulation";
+
+    [JsonPropertyName("sourceSystem")]
+    public string SourceSystem { get; init; } = "manual";
+
+    [JsonPropertyName("version")]
+    public string Version { get; init; } = "v1";
+}
+
 public sealed class DifferencePointDto
 {
     [JsonPropertyName("timestamp")]

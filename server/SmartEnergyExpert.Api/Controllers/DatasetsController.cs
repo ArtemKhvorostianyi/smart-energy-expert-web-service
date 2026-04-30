@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Globalization;
 using SmartEnergyExpert.Api.Data;
 using SmartEnergyExpert.Api.DTOs;
 using SmartEnergyExpert.Api.Entities;
@@ -102,5 +103,83 @@ public sealed class DatasetsController(AppDbContext dbContext) : ControllerBase
         dataset.UpdatedAt = DateTimeOffset.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
         return NoContent();
+    }
+
+    [HttpPost("{datasetId:guid}/samples/import-csv")]
+    [Authorize(Roles = "Admin,Expert")]
+    [Consumes("text/plain")]
+    public async Task<ActionResult<object>> ImportCsv(Guid datasetId, [FromBody] string csvContent, CancellationToken cancellationToken)
+    {
+        var dataset = await dbContext.Datasets.FirstOrDefaultAsync(x => x.Id == datasetId, cancellationToken);
+        if (dataset is null)
+        {
+            return NotFound("Dataset not found.");
+        }
+
+        if (string.IsNullOrWhiteSpace(csvContent))
+        {
+            return BadRequest("CSV content is empty.");
+        }
+
+        var imported = 0;
+        var lines = csvContent.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var rawLine in lines)
+        {
+            var line = rawLine.Trim();
+            if (line.StartsWith("timestamp", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var cells = line.Split(',', StringSplitOptions.TrimEntries);
+            if (cells.Length < 7)
+            {
+                continue;
+            }
+
+            if (!DateTimeOffset.TryParse(cells[0], CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var timestamp))
+            {
+                continue;
+            }
+
+            if (!decimal.TryParse(cells[1], CultureInfo.InvariantCulture, out var frequencyBand) ||
+                !decimal.TryParse(cells[2], CultureInfo.InvariantCulture, out var amplitudeDb) ||
+                !decimal.TryParse(cells[3], CultureInfo.InvariantCulture, out var depthMeters) ||
+                !decimal.TryParse(cells[4], CultureInfo.InvariantCulture, out var rangeMeters))
+            {
+                continue;
+            }
+
+            decimal? soundSpeed = decimal.TryParse(cells[5], CultureInfo.InvariantCulture, out var speed) ? speed : null;
+            decimal? noiseLevel = decimal.TryParse(cells[6], CultureInfo.InvariantCulture, out var noise) ? noise : null;
+
+            dbContext.AcousticSamples.Add(new AcousticSample
+            {
+                DatasetId = dataset.Id,
+                Timestamp = timestamp,
+                FrequencyBand = frequencyBand,
+                AmplitudeDb = amplitudeDb,
+                DepthMeters = depthMeters,
+                RangeMeters = rangeMeters,
+                SoundSpeed = soundSpeed,
+                NoiseLevelDb = noiseLevel
+            });
+
+            if (dataset.TimeRangeStart == default || timestamp < dataset.TimeRangeStart)
+            {
+                dataset.TimeRangeStart = timestamp;
+            }
+
+            if (dataset.TimeRangeEnd == default || timestamp > dataset.TimeRangeEnd)
+            {
+                dataset.TimeRangeEnd = timestamp;
+            }
+
+            imported++;
+        }
+
+        dataset.UpdatedAt = DateTimeOffset.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Ok(new { imported });
     }
 }

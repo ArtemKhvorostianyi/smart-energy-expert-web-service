@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 
@@ -8,6 +9,8 @@ namespace SmartEnergyExpert.Client.Services;
 public interface IApiClient
 {
     Task<IReadOnlyList<DatasetDto>> GetDatasetsAsync(CancellationToken cancellationToken = default);
+    Task<DatasetDto> CreateDatasetAsync(CreateDatasetRequestDto request, CancellationToken cancellationToken = default);
+    Task<int> ImportCsvSamplesAsync(Guid datasetId, string csvContent, CancellationToken cancellationToken = default);
     Task<ComparisonResultDto> RunComparisonAsync(CreateComparisonRequestDto request, CancellationToken cancellationToken = default);
 }
 
@@ -34,6 +37,25 @@ public sealed class ApiClient : IApiClient
         await EnsureBackendAuthorizedAsync(cancellationToken);
         var data = await _httpClient.GetFromJsonAsync<List<DatasetDto>>("api/datasets", JsonOptions, cancellationToken);
         return data ?? [];
+    }
+
+    public async Task<DatasetDto> CreateDatasetAsync(CreateDatasetRequestDto request, CancellationToken cancellationToken = default)
+    {
+        await EnsureBackendAuthorizedAsync(cancellationToken);
+        var response = await _httpClient.PostAsJsonAsync("api/datasets", request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<DatasetDto>(JsonOptions, cancellationToken)
+               ?? throw new InvalidOperationException("Create dataset response payload is empty.");
+    }
+
+    public async Task<int> ImportCsvSamplesAsync(Guid datasetId, string csvContent, CancellationToken cancellationToken = default)
+    {
+        await EnsureBackendAuthorizedAsync(cancellationToken);
+        using var content = new StringContent(csvContent, Encoding.UTF8, "text/plain");
+        var response = await _httpClient.PostAsync($"api/datasets/{datasetId}/samples/import-csv", content, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, int>>(JsonOptions, cancellationToken);
+        return payload is not null && payload.TryGetValue("imported", out var imported) ? imported : 0;
     }
 
     public async Task<ComparisonResultDto> RunComparisonAsync(CreateComparisonRequestDto request, CancellationToken cancellationToken = default)
