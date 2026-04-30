@@ -6,8 +6,7 @@ public sealed class EvaluationsApp : ViewBase
     public override object? Build()
     {
         var apiClient = UseService<SmartEnergyExpert.Client.Services.IApiClient>();
-        var selectedExperimentId = UseState<Guid?>(null);
-        var conclusion = UseState("");
+        var selectedExperimentKey = UseState("");
         var statusMessage = UseState("");
         var latestResult = UseState<SmartEnergyExpert.Client.Services.EvaluationResultDto?>(null);
         var refreshTick = UseState(0);
@@ -16,29 +15,40 @@ public sealed class EvaluationsApp : ViewBase
             key: (nameof(EvaluationsApp), refreshTick.Value),
             fetcher: async ct => await apiClient.GetExperimentsAsync(ct));
         var experiments = experimentsQuery.Value ?? [];
+        var experimentOptions = experiments
+            .Select(x => BuildExperimentOption(x.Id, x.Title, x.ExperimentType, x.CreatedAt))
+            .ToArray();
+        var activeExperimentKey = string.IsNullOrWhiteSpace(selectedExperimentKey.Value) || !experimentOptions.Contains(selectedExperimentKey.Value)
+            ? experimentOptions.FirstOrDefault() ?? string.Empty
+            : selectedExperimentKey.Value;
+        object experimentSelector = experimentsQuery.Loading
+            ? Skeleton.Card()
+            : experimentOptions.Length == 0
+                ? Callout.Warning("No experiments found. Create an experiment first.")
+                : selectedExperimentKey.ToSelectInput(experimentOptions);
 
         return Layout.Vertical().Padding(4).Gap(2)
                | Text.H2("Evaluation Results")
                | new Card(
                    Layout.Vertical()
+                   | Text.H3("Select Experiment")
+                   | experimentSelector
+                   | Text.Muted("Choose experiment by name and run evaluation.")
                    | Text.H3("Run Evaluation")
-                   | Text.Block((selectedExperimentId.Value ?? experiments.FirstOrDefault()?.Id) is null
-                       ? "Selected experiment: not selected"
-                       : $"Selected experiment: {selectedExperimentId.Value ?? experiments.First().Id}")
-                   | conclusion.ToTextInput().Placeholder("Expert conclusion (optional)")
                    | new Button("Evaluate Experiment")
                        .Primary()
                        .OnClick(async () =>
                        {
                            try
                            {
-                               var experimentId = selectedExperimentId.Value ?? experiments.FirstOrDefault()?.Id;
-                               if (experimentId is null)
+                               var selectedExperiment = experiments.FirstOrDefault(x =>
+                                   BuildExperimentOption(x.Id, x.Title, x.ExperimentType, x.CreatedAt) == activeExperimentKey);
+                               if (selectedExperiment is null)
                                {
-                                   throw new InvalidOperationException("No experiment available to evaluate.");
+                                   throw new InvalidOperationException("Select an experiment first.");
                                }
 
-                               var result = await apiClient.EvaluateAsync(experimentId.Value, conclusion.Value);
+                               var result = await apiClient.EvaluateAsync(selectedExperiment.Id, string.Empty);
                                latestResult.Set(result);
                                statusMessage.Set("Evaluation completed.");
                                refreshTick.Set(refreshTick.Value + 1);
@@ -64,26 +74,10 @@ public sealed class EvaluationsApp : ViewBase
                        Layout.Vertical()
                        | Text.H3("Explanation")
                        | Text.Block(latestResult.Value.Explanation)
-                       | Text.Block($"Top factors: {(latestResult.Value.TopFactors.Length == 0 ? "none" : string.Join(", ", latestResult.Value.TopFactors))}")))
-               | Text.H3("History")
-               | (experimentsQuery.Loading
-                   ? Skeleton.Card()
-                   : experimentsQuery.Error is { } err
-                       ? Callout.Error($"Failed to load history: {err.Message}")
-                       : new Card(
-                           Layout.Vertical()
-                           | new Button("Use latest experiment for evaluation")
-                               .OnClick(() =>
-                               {
-                                   if (experiments.Count > 0)
-                                   {
-                                       selectedExperimentId.Set(experiments[0].Id);
-                                   }
-                               })
-                           | string.Join(
-                               Environment.NewLine,
-                               experiments
-                                   .Where(x => string.Equals(x.Status, "evaluated", StringComparison.OrdinalIgnoreCase))
-                                   .Select(x => $"{x.Id} | {x.Title} | {x.ExperimentType} | {x.Status} | {x.CreatedAt:yyyy-MM-dd HH:mm}"))));
+                       | Text.Block($"Top factors: {(latestResult.Value.TopFactors.Length == 0 ? "none" : string.Join(", ", latestResult.Value.TopFactors))}")));
     }
+
+    private static string BuildExperimentOption(Guid id, string title, string experimentType, DateTimeOffset createdAt) =>
+        $"{title} ({experimentType}, {createdAt:yyyy-MM-dd HH:mm}) [{id.ToString()[..8]}]";
+
 }

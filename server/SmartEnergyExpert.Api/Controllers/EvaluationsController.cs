@@ -12,10 +12,50 @@ namespace SmartEnergyExpert.Api.Controllers;
 
 [ApiController]
 [Route("api/experiments/{experimentId:guid}/evaluation")]
-[Authorize(Roles = "Admin,Expert")]
+[Authorize]
 public sealed class EvaluationsController(AppDbContext dbContext, IEvaluationService evaluationService) : ControllerBase
 {
+    [HttpGet("latest")]
+    public async Task<ActionResult<EvaluationResultResponse>> GetLatest(
+        [FromRoute] Guid experimentId,
+        CancellationToken cancellationToken)
+    {
+        var latestEvaluation = await dbContext.Evaluations
+            .AsNoTracking()
+            .Where(x => x.ExperimentId == experimentId)
+            .OrderByDescending(x => x.CreatedAt)
+            .Select(x => new
+            {
+                Evaluation = x,
+                Recommendation = x.Recommendation != null ? x.Recommendation.DecisionText : null
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (latestEvaluation is null)
+        {
+            return NotFound($"No evaluations found for experiment '{experimentId}'.");
+        }
+
+        var topFactors = string.IsNullOrWhiteSpace(latestEvaluation.Evaluation.TopFactors)
+            ? []
+            : JsonSerializer.Deserialize<string[]>(latestEvaluation.Evaluation.TopFactors!) ?? [];
+
+        return Ok(new EvaluationResultResponse
+        {
+            EvaluationId = latestEvaluation.Evaluation.Id,
+            IntegralScore = latestEvaluation.Evaluation.IntegralScore,
+            RiskLevel = latestEvaluation.Evaluation.RiskLevel,
+            Recommendation = latestEvaluation.Recommendation ?? string.Empty,
+            Conclusion = latestEvaluation.Evaluation.Conclusion,
+            Explanation = latestEvaluation.Evaluation.Explanation ?? string.Empty,
+            TopFactors = topFactors,
+            Status = latestEvaluation.Evaluation.Status,
+            EvaluatedAt = latestEvaluation.Evaluation.CreatedAt
+        });
+    }
+
     [HttpPost]
+    [Authorize(Roles = "Admin,Expert")]
     public async Task<ActionResult<EvaluationResultResponse>> Evaluate(
         [FromRoute] Guid experimentId,
         [FromBody] EvaluateExperimentRequest request,
@@ -95,9 +135,11 @@ public sealed class EvaluationsController(AppDbContext dbContext, IEvaluationSer
             IntegralScore = result.Score,
             RiskLevel = result.RiskLevel,
             Recommendation = result.Recommendation,
+            Conclusion = evaluation.Conclusion,
             Explanation = result.Explanation,
             TopFactors = result.TopFactors.ToArray(),
-            Status = result.Status
+            Status = result.Status,
+            EvaluatedAt = evaluation.CreatedAt
         });
     }
 }

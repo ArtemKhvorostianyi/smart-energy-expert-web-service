@@ -179,6 +179,9 @@ public sealed class EvaluationResultDto
     [JsonPropertyName("recommendation")]
     public string Recommendation { get; init; } = string.Empty;
 
+    [JsonPropertyName("conclusion")]
+    public string? Conclusion { get; init; }
+
     [JsonPropertyName("explanation")]
     public string Explanation { get; init; } = string.Empty;
 
@@ -187,5 +190,8 @@ public sealed class EvaluationResultDto
 
     [JsonPropertyName("status")]
     public string Status { get; init; } = string.Empty;
+
+    [JsonPropertyName("evaluatedAt")]
+    public DateTimeOffset EvaluatedAt { get; init; }
 }
 
