@@ -1,6 +1,6 @@
-# Smart Energy Expert Client (Ivy)
+# Hydroacoustic Client (Ivy)
 
-UI application built with Ivy Framework for the diploma project.
+Single localhost UI for running model-vs-field hydroacoustic comparison.
 
 ## Run locally
 
@@ -9,15 +9,13 @@ ivy auth add --provider Basic
 ivy run --browse
 ```
 
-## What is included now
+## Included apps
 
-- `Dashboard` app for platform overview.
-- `Experiments` app as input workspace placeholder.
-- `Evaluations` app as risk/recommendation workspace placeholder.
+- `Dashboard` with local workflow hints.
+- `Hydroacoustic Comparison` for selecting simulation and field datasets.
+- Result blocks for metrics, top differences, and recommendations.
 
-## Next UI steps
+## Backend assumptions
 
-1. Add authenticated layout and user profile panel.
-2. Connect to backend `api/experiments` and `api/experiments/{id}/evaluation`.
-3. Implement forms, validation, and tabular history views.
-4. Add role-based app visibility for Admin/Expert/Operator.
+- API URL: `http://localhost:5109/`
+- Login credentials (seeded): `admin@smartenergy.local` / `Admin123!`

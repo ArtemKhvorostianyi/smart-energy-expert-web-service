@@ -2,16 +2,6 @@ using System.Text.Json.Serialization;
 
 namespace SmartEnergyExpert.Client.Services;
 
-public sealed class UserSession
-{
-    public string AccessToken { get; init; } = string.Empty;
-    public int ExpiresInSeconds { get; init; }
-    public Guid UserId { get; init; }
-    public string FullName { get; init; } = string.Empty;
-    public string Email { get; init; } = string.Empty;
-    public string Role { get; init; } = string.Empty;
-}
-
 public sealed class LoginRequestDto
 {
     [JsonPropertyName("email")]
@@ -28,170 +18,115 @@ public sealed class LoginResponseDto
 
     [JsonPropertyName("expiresInSeconds")]
     public int ExpiresInSeconds { get; init; }
-
-    [JsonPropertyName("userId")]
-    public Guid UserId { get; init; }
-
-    [JsonPropertyName("fullName")]
-    public string FullName { get; init; } = string.Empty;
-
-    [JsonPropertyName("email")]
-    public string Email { get; init; } = string.Empty;
-
-    [JsonPropertyName("role")]
-    public string Role { get; init; } = string.Empty;
 }
 
-public sealed class ExperimentDto
+public sealed class DatasetDto
 {
     [JsonPropertyName("id")]
     public Guid Id { get; init; }
 
-    [JsonPropertyName("title")]
-    public string Title { get; init; } = string.Empty;
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = string.Empty;
 
-    [JsonPropertyName("experimentType")]
-    public string ExperimentType { get; init; } = string.Empty;
+    [JsonPropertyName("type")]
+    public string Type { get; init; } = string.Empty;
 
-    [JsonPropertyName("description")]
-    public string? Description { get; init; }
+    [JsonPropertyName("sourceSystem")]
+    public string SourceSystem { get; init; } = string.Empty;
 
-    [JsonPropertyName("status")]
-    public string Status { get; init; } = string.Empty;
+    [JsonPropertyName("version")]
+    public string Version { get; init; } = string.Empty;
 
-    [JsonPropertyName("createdAt")]
-    public DateTimeOffset CreatedAt { get; init; }
+    [JsonPropertyName("timeRangeStart")]
+    public DateTimeOffset TimeRangeStart { get; init; }
+
+    [JsonPropertyName("timeRangeEnd")]
+    public DateTimeOffset TimeRangeEnd { get; init; }
+
+    [JsonPropertyName("sampleCount")]
+    public int SampleCount { get; init; }
 }
 
-public sealed class ExperimentParameterDto
+public sealed class CreateComparisonRequestDto
 {
-    [JsonPropertyName("id")]
-    public Guid Id { get; init; }
+    [JsonPropertyName("simulationDatasetId")]
+    public Guid SimulationDatasetId { get; init; }
 
-    [JsonPropertyName("experimentId")]
-    public Guid ExperimentId { get; init; }
+    [JsonPropertyName("fieldDatasetId")]
+    public Guid FieldDatasetId { get; init; }
 
-    [JsonPropertyName("parameterName")]
-    public string ParameterName { get; init; } = string.Empty;
-
-    [JsonPropertyName("value")]
-    public decimal Value { get; init; }
-
-    [JsonPropertyName("unit")]
-    public string Unit { get; init; } = string.Empty;
-
-    [JsonPropertyName("minAcceptable")]
-    public decimal? MinAcceptable { get; init; }
-
-    [JsonPropertyName("maxAcceptable")]
-    public decimal? MaxAcceptable { get; init; }
-
-    [JsonPropertyName("weight")]
-    public decimal? Weight { get; init; }
-
-    [JsonPropertyName("category")]
-    public string Category { get; init; } = "physical";
-
-    [JsonPropertyName("description")]
-    public string? Description { get; init; }
-
-    [JsonPropertyName("isCritical")]
-    public bool IsCritical { get; init; }
-
-    [JsonPropertyName("source")]
-    public string Source { get; init; } = "manual";
-
-    [JsonPropertyName("measuredAt")]
-    public DateTimeOffset? MeasuredAt { get; init; }
-
-    [JsonPropertyName("createdAt")]
-    public DateTimeOffset CreatedAt { get; init; }
+    [JsonPropertyName("topN")]
+    public int TopN { get; init; } = 20;
 }
 
-public sealed class CreateExperimentRequestDto
+public sealed class DifferencePointDto
 {
-    [JsonPropertyName("title")]
-    public string Title { get; init; } = string.Empty;
+    [JsonPropertyName("timestamp")]
+    public DateTimeOffset Timestamp { get; init; }
 
-    [JsonPropertyName("experimentType")]
-    public string ExperimentType { get; init; } = string.Empty;
+    [JsonPropertyName("frequencyBand")]
+    public decimal FrequencyBand { get; init; }
 
-    [JsonPropertyName("description")]
-    public string? Description { get; init; }
+    [JsonPropertyName("simulationValue")]
+    public decimal SimulationValue { get; init; }
 
-    [JsonPropertyName("createdBy")]
-    public Guid CreatedBy { get; init; }
+    [JsonPropertyName("fieldValue")]
+    public decimal FieldValue { get; init; }
+
+    [JsonPropertyName("absoluteError")]
+    public decimal AbsoluteError { get; init; }
+
+    [JsonPropertyName("relativeErrorPercent")]
+    public decimal RelativeErrorPercent { get; init; }
+
+    [JsonPropertyName("severity")]
+    public string Severity { get; init; } = string.Empty;
+
+    [JsonPropertyName("explanation")]
+    public string Explanation { get; init; } = string.Empty;
 }
 
-public sealed class AddParameterRequestDto
+public sealed class RecommendationDto
 {
-    [JsonPropertyName("parameterName")]
-    public string ParameterName { get; init; } = string.Empty;
-
-    [JsonPropertyName("value")]
-    public decimal Value { get; init; }
-
-    [JsonPropertyName("unit")]
-    public string Unit { get; init; } = string.Empty;
-
-    [JsonPropertyName("minAcceptable")]
-    public decimal? MinAcceptable { get; init; }
-
-    [JsonPropertyName("maxAcceptable")]
-    public decimal? MaxAcceptable { get; init; }
-
-    [JsonPropertyName("weight")]
-    public decimal? Weight { get; init; }
-
-    [JsonPropertyName("category")]
-    public string Category { get; init; } = "physical";
-
-    [JsonPropertyName("description")]
-    public string? Description { get; init; }
-
-    [JsonPropertyName("isCritical")]
-    public bool IsCritical { get; init; }
-
-    [JsonPropertyName("source")]
-    public string Source { get; init; } = "manual";
-
-    [JsonPropertyName("measuredAt")]
-    public DateTimeOffset? MeasuredAt { get; init; }
-}
-
-public sealed class EvaluationRequestDto
-{
-    [JsonPropertyName("conclusion")]
-    public string? Conclusion { get; init; }
-}
-
-public sealed class EvaluationResultDto
-{
-    [JsonPropertyName("evaluationId")]
-    public Guid EvaluationId { get; init; }
-
-    [JsonPropertyName("integralScore")]
-    public decimal IntegralScore { get; init; }
-
-    [JsonPropertyName("riskLevel")]
-    public string RiskLevel { get; init; } = string.Empty;
-
-    [JsonPropertyName("recommendation")]
-    public string Recommendation { get; init; } = string.Empty;
-
-    [JsonPropertyName("conclusion")]
-    public string? Conclusion { get; init; }
+    [JsonPropertyName("reasonCode")]
+    public string ReasonCode { get; init; } = string.Empty;
 
     [JsonPropertyName("explanation")]
     public string Explanation { get; init; } = string.Empty;
 
-    [JsonPropertyName("topFactors")]
-    public string[] TopFactors { get; init; } = [];
+    [JsonPropertyName("suggestedAction")]
+    public string SuggestedAction { get; init; } = string.Empty;
 
-    [JsonPropertyName("status")]
-    public string Status { get; init; } = string.Empty;
-
-    [JsonPropertyName("evaluatedAt")]
-    public DateTimeOffset EvaluatedAt { get; init; }
+    [JsonPropertyName("confidence")]
+    public decimal Confidence { get; init; }
 }
 
+public sealed class ComparisonResultDto
+{
+    [JsonPropertyName("comparisonRunId")]
+    public Guid ComparisonRunId { get; init; }
+
+    [JsonPropertyName("mae")]
+    public decimal Mae { get; init; }
+
+    [JsonPropertyName("rmse")]
+    public decimal Rmse { get; init; }
+
+    [JsonPropertyName("meanRelativeErrorPercent")]
+    public decimal MeanRelativeErrorPercent { get; init; }
+
+    [JsonPropertyName("p95AbsoluteError")]
+    public decimal P95AbsoluteError { get; init; }
+
+    [JsonPropertyName("totalComparedPoints")]
+    public int TotalComparedPoints { get; init; }
+
+    [JsonPropertyName("significantDifferenceCount")]
+    public int SignificantDifferenceCount { get; init; }
+
+    [JsonPropertyName("topDifferences")]
+    public DifferencePointDto[] TopDifferences { get; init; } = [];
+
+    [JsonPropertyName("recommendations")]
+    public RecommendationDto[] Recommendations { get; init; } = [];
+}

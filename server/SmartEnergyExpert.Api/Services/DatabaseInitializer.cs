@@ -15,7 +15,7 @@ public sealed class DatabaseInitializer(IServiceProvider serviceProvider, ILogge
 
             await dbContext.Database.MigrateAsync(cancellationToken);
             await SeedRolesAndUsersAsync(dbContext, cancellationToken);
-            await SeedCriteriaAsync(dbContext, cancellationToken);
+            await SeedSyntheticDatasetsAsync(dbContext, cancellationToken);
 
             logger.LogInformation("Database initialization completed.");
         }
@@ -69,52 +69,75 @@ public sealed class DatabaseInitializer(IServiceProvider serviceProvider, ILogge
         }
     }
 
-    private static async Task SeedCriteriaAsync(AppDbContext dbContext, CancellationToken cancellationToken)
+    private static async Task SeedSyntheticDatasetsAsync(AppDbContext dbContext, CancellationToken cancellationToken)
     {
-        if (await dbContext.Criteria.AnyAsync(cancellationToken))
+        if (await dbContext.Datasets.AnyAsync(cancellationToken))
         {
             return;
         }
 
-        var criteria = new[]
+        var start = DateTimeOffset.UtcNow.AddHours(-3);
+        var simulation = new Dataset
         {
-            new Criterion
-            {
-                Name = "temperature",
-                Description = "Observed equipment temperature",
-                MinValue = 0,
-                MaxValue = 120,
-                DefaultWeight = 0.35m
-            },
-            new Criterion
-            {
-                Name = "vibration",
-                Description = "Observed vibration level",
-                MinValue = 0,
-                MaxValue = 25,
-                DefaultWeight = 0.35m
-            },
-            new Criterion
-            {
-                Name = "pressure",
-                Description = "Observed pressure level",
-                MinValue = 0,
-                MaxValue = 16,
-                DefaultWeight = 0.30m
-            }
+            Name = "synthetic-simulation-v1",
+            Type = "simulation",
+            SourceSystem = "synthetic-generator",
+            Version = "v1",
+            TimeRangeStart = start,
+            TimeRangeEnd = start.AddMinutes(59)
+        };
+        var field = new Dataset
+        {
+            Name = "synthetic-field-v1",
+            Type = "field",
+            SourceSystem = "synthetic-generator",
+            Version = "v1",
+            TimeRangeStart = start,
+            TimeRangeEnd = start.AddMinutes(59)
         };
 
-        dbContext.Criteria.AddRange(criteria);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        dbContext.Datasets.AddRange(simulation, field);
 
-        var weights = criteria.Select(x => new CriterionWeight
+        var random = new Random(42);
+        var bands = new[] { 200m, 400m, 800m, 1200m };
+        var simulationSamples = new List<AcousticSample>();
+        var fieldSamples = new List<AcousticSample>();
+        for (var minute = 0; minute < 60; minute++)
         {
-            CriterionId = x.Id,
-            ExperimentType = "default",
-            Weight = x.DefaultWeight
-        });
+            var timestamp = start.AddMinutes(minute);
+            foreach (var band in bands)
+            {
+                var baseAmplitude = -72m + (band / 1000m) + (decimal)Math.Sin(minute / 12d) * 4m;
+                var simulationAmplitude = baseAmplitude + (decimal)(random.NextDouble() - 0.5d) * 2m;
+                var fieldAmplitude = simulationAmplitude + (decimal)(random.NextDouble() - 0.5d) * 8m;
 
-        dbContext.CriterionWeights.AddRange(weights);
+                simulationSamples.Add(new AcousticSample
+                {
+                    Dataset = simulation,
+                    Timestamp = timestamp,
+                    FrequencyBand = band,
+                    AmplitudeDb = decimal.Round(simulationAmplitude, 4),
+                    DepthMeters = 60,
+                    RangeMeters = 1000 + minute * 20,
+                    SoundSpeed = 1498 + (decimal)Math.Sin(minute / 20d),
+                    NoiseLevelDb = -90 + (decimal)(random.NextDouble() * 4)
+                });
+                fieldSamples.Add(new AcousticSample
+                {
+                    Dataset = field,
+                    Timestamp = timestamp,
+                    FrequencyBand = band,
+                    AmplitudeDb = decimal.Round(fieldAmplitude, 4),
+                    DepthMeters = 60 + random.Next(-2, 3),
+                    RangeMeters = 1000 + minute * 20 + random.Next(-25, 26),
+                    SoundSpeed = 1497 + (decimal)Math.Sin(minute / 17d),
+                    NoiseLevelDb = -88 + (decimal)(random.NextDouble() * 5)
+                });
+            }
+        }
+
+        dbContext.AcousticSamples.AddRange(simulationSamples);
+        dbContext.AcousticSamples.AddRange(fieldSamples);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 }

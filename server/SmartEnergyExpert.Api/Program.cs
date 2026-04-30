@@ -13,7 +13,7 @@ builder.Services.AddOpenApi();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(
         builder.Configuration.GetConnectionString("DefaultConnection")
-        ?? "Host=localhost;Port=5432;Database=smart_energy_expert;Username=postgres;Password=postgres"));
+        ?? "Host=localhost;Port=5432;Database=hydroacoustic_expert;Username=postgres;Password=postgres"));
 
 var jwtKey = builder.Configuration["Jwt:Key"] ?? "dev-only-super-secret-key-change-this";
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "SmartEnergyExpert.Api";
@@ -35,7 +35,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-builder.Services.AddScoped<IEvaluationService, EvaluationService>();
+builder.Services.AddScoped<IComparisonService, ComparisonService>();
 builder.Services.AddSingleton<DatabaseInitializer>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 

@@ -7,9 +7,9 @@ public sealed class DashboardApp : ViewBase
     {
         var navigator = UseNavigation();
 
-        return Layout.Vertical().Padding(4).Gap(2)
-               | Text.H1("Smart Energy Expert")
-               | Text.P("Web service for expert evaluation to support decision-making in energy cyber-physical systems.")
+        return Layout.Vertical().Gap(2)
+               | Text.H1("Hydroacoustic Comparison Service")
+               | Text.P("Local Ivy application for comparing hydroacoustic simulation outputs against field measurements.")
                | new Separator()
                | new Card(
                    Layout.Vertical()
@@ -20,9 +20,9 @@ public sealed class DashboardApp : ViewBase
                        .OnClick(() => navigator.Navigate("app://logout")))
                | new Separator()
                | Text.H3("Workflow")
-               | Text.Block("1. Login in Dashboard")
-               | Text.Block("2. Create experiment and add parameter in Experiments")
-               | Text.Block("3. Run evaluation in Evaluations")
-               | Text.Block("4. Review history in Evaluations");
+               | Text.Block("1. Ensure API and PostgreSQL run on localhost.")
+               | Text.Block("2. Open Hydroacoustic Comparison app.")
+               | Text.Block("3. Select simulation and field datasets.")
+               | Text.Block("4. Run comparison and inspect top differences with recommendations.");
     }
 }
