@@ -182,4 +182,20 @@ public sealed class DatasetsController(AppDbContext dbContext) : ControllerBase
         await dbContext.SaveChangesAsync(cancellationToken);
         return Ok(new { imported });
     }
+
+    [HttpPost("{datasetId:guid}/samples/import-csv-file")]
+    [Authorize(Roles = "Admin,Expert")]
+    [Consumes("multipart/form-data")]
+    public async Task<ActionResult<object>> ImportCsvFile(Guid datasetId, IFormFile file, CancellationToken cancellationToken)
+    {
+        if (file is null || file.Length == 0)
+        {
+            return BadRequest("CSV file is empty.");
+        }
+
+        await using var stream = file.OpenReadStream();
+        using var reader = new StreamReader(stream);
+        var csvContent = await reader.ReadToEndAsync(cancellationToken);
+        return await ImportCsv(datasetId, csvContent, cancellationToken);
+    }
 }

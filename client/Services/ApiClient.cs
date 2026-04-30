@@ -11,6 +11,7 @@ public interface IApiClient
     Task<IReadOnlyList<DatasetDto>> GetDatasetsAsync(CancellationToken cancellationToken = default);
     Task<DatasetDto> CreateDatasetAsync(CreateDatasetRequestDto request, CancellationToken cancellationToken = default);
     Task<int> ImportCsvSamplesAsync(Guid datasetId, string csvContent, CancellationToken cancellationToken = default);
+    Task<int> ImportCsvFileAsync(Guid datasetId, string filePath, CancellationToken cancellationToken = default);
     Task<ComparisonResultDto> RunComparisonAsync(CreateComparisonRequestDto request, CancellationToken cancellationToken = default);
 }
 
@@ -53,6 +54,26 @@ public sealed class ApiClient : IApiClient
         await EnsureBackendAuthorizedAsync(cancellationToken);
         using var content = new StringContent(csvContent, Encoding.UTF8, "text/plain");
         var response = await _httpClient.PostAsync($"api/datasets/{datasetId}/samples/import-csv", content, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, int>>(JsonOptions, cancellationToken);
+        return payload is not null && payload.TryGetValue("imported", out var imported) ? imported : 0;
+    }
+
+    public async Task<int> ImportCsvFileAsync(Guid datasetId, string filePath, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            throw new InvalidOperationException("File path is empty.");
+        }
+
+        await EnsureBackendAuthorizedAsync(cancellationToken);
+        await using var fileStream = File.OpenRead(filePath.Trim());
+        using var content = new MultipartFormDataContent();
+        using var fileContent = new StreamContent(fileStream);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/csv");
+        content.Add(fileContent, "file", Path.GetFileName(filePath.Trim()));
+
+        var response = await _httpClient.PostAsync($"api/datasets/{datasetId}/samples/import-csv-file", content, cancellationToken);
         response.EnsureSuccessStatusCode();
         var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, int>>(JsonOptions, cancellationToken);
         return payload is not null && payload.TryGetValue("imported", out var imported) ? imported : 0;

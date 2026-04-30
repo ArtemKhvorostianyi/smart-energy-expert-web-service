@@ -16,6 +16,7 @@ public sealed class EvaluationsApp : ViewBase
         var newDatasetSource = UseState("manual");
         var newDatasetVersion = UseState("v1");
         var importDataset = UseState("");
+        var importCsvPath = UseState("");
 
         var datasetsQuery = UseQuery(
             key: (nameof(EvaluationsApp), refreshTick.Value),
@@ -72,6 +73,36 @@ public sealed class EvaluationsApp : ViewBase
                    | (allDatasetOptions.Length == 0
                        ? Text.Muted("No datasets yet for CSV import.")
                        : importDataset.ToSelectInput(allDatasetOptions))
+                   | importCsvPath.ToTextInput().Placeholder("CSV file path, e.g. /Users/me/data/field.csv")
+                   | Text.Muted("CSV columns: timestamp,frequencyBand,amplitudeDb,depthMeters,rangeMeters,soundSpeed,noiseLevelDb")
+                   | new Button("Import CSV File into Selected Dataset")
+                       .Primary()
+                       .OnClick(async () =>
+                       {
+                           try
+                           {
+                               if (string.IsNullOrWhiteSpace(importDataset.Value))
+                               {
+                                   statusMessage.Set("Select a dataset for CSV file import.");
+                                   return;
+                               }
+
+                               if (string.IsNullOrWhiteSpace(importCsvPath.Value))
+                               {
+                                   statusMessage.Set("Enter CSV file path.");
+                                   return;
+                               }
+
+                               var datasetId = ParseDatasetId(importDataset.Value);
+                               var imported = await apiClient.ImportCsvFileAsync(datasetId, importCsvPath.Value);
+                               statusMessage.Set($"CSV file imported. Rows: {imported}.");
+                               refreshTick.Set(refreshTick.Value + 1);
+                           }
+                           catch (Exception ex)
+                           {
+                               statusMessage.Set($"CSV file import failed: {ex.Message}");
+                           }
+                       })
                    | new Button("Import Sample CSV into Selected Dataset")
                        .OnClick(async () =>
                        {
