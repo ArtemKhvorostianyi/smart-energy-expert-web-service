@@ -1,206 +1,239 @@
+using ClientServices = SmartEnergyExpert.Client.Services;
+
 namespace SmartEnergyExpert.Client.Apps;
 
-[App(icon: Icons.Waves, title: "Hydroacoustic Comparison", searchHints: ["hydroacoustic", "comparison", "simulation", "field"])]
+[App(icon: Icons.Waves, title: "Hydroacoustic Comparison", searchHints: ["hydroacoustic", "comparison", "charts", "blades", "preset"])]
 public sealed class EvaluationsApp : ViewBase
 {
-    public override object? Build()
+    public override object? Build() => UseBlades(() => new WorkspaceBlade(), "Hydroacoustic Comparison");
+
+    private sealed record ComparisonPreset(string Name, Guid SimulationDatasetId, Guid FieldDatasetId, int TopN);
+
+    private sealed class WorkspaceBlade : ViewBase
     {
-        var apiClient = UseService<SmartEnergyExpert.Client.Services.IApiClient>();
-        var refreshTick = UseState(0);
-        var selectedSimulation = UseState("");
-        var selectedField = UseState("");
-        var statusMessage = UseState("");
-        var latestResult = UseState<SmartEnergyExpert.Client.Services.ComparisonResultDto?>(null);
-        var newDatasetName = UseState("");
-        var newDatasetType = UseState("simulation");
-        var newDatasetSource = UseState("manual");
-        var newDatasetVersion = UseState("v1");
-        var importDataset = UseState("");
-        var importCsvPath = UseState("");
+        public override object? Build()
+        {
+            var apiClient = UseService<ClientServices.IApiClient>();
+            var blades = UseContext<IBladeContext>();
+            var refreshTick = UseState(0);
+            var selectedSimulation = UseState("");
+            var selectedField = UseState("");
+            var topN = UseState(15m);
+            var status = UseState("");
+            var result = UseState<ClientServices.ComparisonResultDto?>(null);
+            var presetName = UseState("");
+            var selectedPreset = UseState("");
+            var presets = UseState(new List<ComparisonPreset>());
 
-        var datasetsQuery = UseQuery(
-            key: (nameof(EvaluationsApp), refreshTick.Value),
-            fetcher: async ct => await apiClient.GetDatasetsAsync(ct));
-        var datasets = datasetsQuery.Value ?? [];
-        var simulationOptions = datasets.Where(x => x.Type == "simulation").Select(ToOption).ToArray();
-        var fieldOptions = datasets.Where(x => x.Type == "field").Select(ToOption).ToArray();
-        var allDatasetOptions = datasets.Select(ToOption).ToArray();
-        var canRunComparison =
-            !datasetsQuery.Loading &&
-            simulationOptions.Length > 0 &&
-            fieldOptions.Length > 0 &&
-            !string.IsNullOrWhiteSpace(selectedSimulation.Value) &&
-            !string.IsNullOrWhiteSpace(selectedField.Value);
+            var datasetsQuery = UseQuery(
+                key: (nameof(WorkspaceBlade), refreshTick.Value),
+                fetcher: async ct => await apiClient.GetDatasetsAsync(ct));
+            var datasets = datasetsQuery.Value ?? [];
+            var simOptions = datasets.Where(x => x.Type == "simulation").Select(ToOption).ToArray();
+            var fieldOptions = datasets.Where(x => x.Type == "field").Select(ToOption).ToArray();
+            var canRun = !datasetsQuery.Loading
+                         && simOptions.Length > 0
+                         && fieldOptions.Length > 0
+                         && !string.IsNullOrWhiteSpace(selectedSimulation.Value)
+                         && !string.IsNullOrWhiteSpace(selectedField.Value);
 
-        return Layout.Vertical().Gap(2)
-               | Text.H2("Hydroacoustic Model vs Field Comparison")
-               | Text.Muted("Compare modeled and field hydroacoustic signals, then review metric interpretation and actionable recommendations.")
-               | new Card(
-                   Layout.Vertical()
-                   | Text.H3("Data Management")
-                   | Text.Muted("Create new dataset or import sample CSV rows into an existing dataset.")
-                   | newDatasetName.ToTextInput().Placeholder("Dataset name")
-                   | newDatasetType.ToSelectInput(["simulation", "field"])
-                   | newDatasetSource.ToTextInput().Placeholder("Source system, e.g. swellex, ut-austin, manual")
-                   | newDatasetVersion.ToTextInput().Placeholder("Version, e.g. v1")
-                   | new Button("Create Dataset")
-                       .OnClick(async () =>
-                       {
-                           try
+            return new Fragment()
+                   | new BladeHeader(
+                       Layout.Horizontal().Gap(2)
+                       | new Button("Open Charts")
+                           .OnClick(() =>
                            {
-                               if (string.IsNullOrWhiteSpace(newDatasetName.Value))
+                               if (result.Value is null)
                                {
-                                   statusMessage.Set("Dataset name is required.");
+                                   status.Set("Run comparison first.");
                                    return;
                                }
 
-                               await apiClient.CreateDatasetAsync(new SmartEnergyExpert.Client.Services.CreateDatasetRequestDto
-                               {
-                                   Name = newDatasetName.Value.Trim(),
-                                   Type = newDatasetType.Value,
-                                   SourceSystem = newDatasetSource.Value.Trim(),
-                                   Version = newDatasetVersion.Value.Trim()
-                               });
-                               newDatasetName.Set("");
-                               statusMessage.Set("Dataset created.");
-                               refreshTick.Set(refreshTick.Value + 1);
-                           }
-                           catch (Exception ex)
+                               blades.Push(this, new ChartsBlade(result.Value), "Charts", width: Size.Units(120));
+                           }))
+                   | Layout.Vertical().Gap(2)
+                       | Text.H2("Hydroacoustic Comparison")
+                       | BuildPresetCard(presetName, selectedPreset, presets, selectedSimulation, selectedField, topN, datasets, status)
+                       | new Card(
+                           Layout.Vertical()
+                           | Text.H3("Selection")
+                           | (datasetsQuery.Loading ? Skeleton.Card() : selectedSimulation.ToSelectInput(simOptions))
+                           | (datasetsQuery.Loading ? Skeleton.Card() : selectedField.ToSelectInput(fieldOptions))
+                           | topN.ToNumberInput(min: 5, max: 100).Placeholder("Top-N")
+                           | new Button("Run Comparison").Primary().Disabled(!canRun).OnClick(async () =>
                            {
-                               statusMessage.Set($"Create dataset failed: {ex.Message}");
-                           }
-                       })
-                   | (allDatasetOptions.Length == 0
-                       ? Text.Muted("No datasets yet for CSV import.")
-                       : importDataset.ToSelectInput(allDatasetOptions))
-                   | importCsvPath.ToTextInput().Placeholder("CSV file path, e.g. /Users/me/data/field.csv")
-                   | Text.Muted("CSV columns: timestamp,frequencyBand,amplitudeDb,depthMeters,rangeMeters,soundSpeed,noiseLevelDb")
-                   | new Button("Import CSV File into Selected Dataset")
-                       .Primary()
-                       .OnClick(async () =>
-                       {
-                           try
-                           {
-                               if (string.IsNullOrWhiteSpace(importDataset.Value))
+                               try
                                {
-                                   statusMessage.Set("Select a dataset for CSV file import.");
-                                   return;
-                               }
+                                   if (!canRun)
+                                   {
+                                       status.Set("Select both datasets.");
+                                       return;
+                                   }
 
-                               if (string.IsNullOrWhiteSpace(importCsvPath.Value))
-                               {
-                                   statusMessage.Set("Enter CSV file path.");
-                                   return;
+                                   var latest = await apiClient.RunComparisonAsync(new ClientServices.CreateComparisonRequestDto
+                                   {
+                                       SimulationDatasetId = ParseDatasetId(selectedSimulation.Value),
+                                       FieldDatasetId = ParseDatasetId(selectedField.Value),
+                                       TopN = (int)decimal.Clamp(topN.Value, 5, 100)
+                                   });
+                                   result.Set(latest);
+                                   status.Set("Comparison completed.");
                                }
-
-                               var datasetId = ParseDatasetId(importDataset.Value);
-                               var imported = await apiClient.ImportCsvFileAsync(datasetId, importCsvPath.Value);
-                               statusMessage.Set($"CSV file imported. Rows: {imported}.");
-                               refreshTick.Set(refreshTick.Value + 1);
-                           }
-                           catch (Exception ex)
-                           {
-                               statusMessage.Set($"CSV file import failed: {ex.Message}");
-                           }
-                       })
-                   | new Button("Import Sample CSV into Selected Dataset")
-                       .OnClick(async () =>
-                       {
-                           try
-                           {
-                               if (string.IsNullOrWhiteSpace(importDataset.Value))
+                               catch (Exception ex)
                                {
-                                   statusMessage.Set("Select a dataset for CSV import.");
-                                   return;
+                                   status.Set($"Comparison failed: {ex.Message}");
                                }
+                           }))
+                       | (datasetsQuery.Error is { } e ? Callout.Warning(e.Message) : new Fragment())
+                       | (string.IsNullOrWhiteSpace(status.Value) ? new Fragment() : Callout.Info(status.Value))
+                       | (result.Value is null ? new Fragment() : BuildResultCards(result.Value));
+        }
 
-                               var datasetId = ParseDatasetId(importDataset.Value);
-                               var imported = await apiClient.ImportCsvSamplesAsync(datasetId, BuildSampleCsv());
-                               statusMessage.Set($"CSV import completed. Imported rows: {imported}.");
-                               refreshTick.Set(refreshTick.Value + 1);
-                           }
-                           catch (Exception ex)
-                           {
-                               statusMessage.Set($"CSV import failed: {ex.Message}");
-                           }
-                       }))
-               | new Card(
-                   Layout.Vertical()
-                   | Text.H3("Dataset Selection")
-                   | (datasetsQuery.Loading
-                       ? Skeleton.Card()
-                       : simulationOptions.Length == 0
-                           ? Text.Muted("No simulation datasets found.")
-                           : selectedSimulation.ToSelectInput(simulationOptions))
-                   | (datasetsQuery.Loading
-                       ? Skeleton.Card()
-                       : fieldOptions.Length == 0
-                           ? Text.Muted("No field datasets found.")
-                           : selectedField.ToSelectInput(fieldOptions))
-                   | new Button("Run Comparison")
-                       .Primary()
-                       .Disabled(!canRunComparison)
-                       .OnClick(async () =>
-                       {
-                           try
-                           {
-                               if (!canRunComparison)
-                               {
-                                   statusMessage.Set("Select both datasets before running comparison.");
-                                   return;
-                               }
+        private static object BuildPresetCard(
+            IState<string> presetName,
+            IState<string> selectedPreset,
+            IState<List<ComparisonPreset>> presets,
+            IState<string> selectedSimulation,
+            IState<string> selectedField,
+            IState<decimal> topN,
+            IReadOnlyList<ClientServices.DatasetDto> datasets,
+            IState<string> status)
+        {
+            var presetOptions = presets.Value.Select(x => x.Name).ToArray();
+            return new Card(
+                Layout.Vertical()
+                | Text.H3("Presets")
+                | presetName.ToTextInput().Placeholder("Preset name")
+                | (presetOptions.Length == 0 ? Text.Muted("No presets.") : selectedPreset.ToSelectInput(presetOptions))
+                | (Layout.Horizontal().Gap(2)
+                    | new Button("Save").OnClick(() =>
+                    {
+                        var simId = TryParseDatasetId(selectedSimulation.Value);
+                        var fieldId = TryParseDatasetId(selectedField.Value);
+                        if (simId == Guid.Empty || fieldId == Guid.Empty)
+                        {
+                            status.Set("Select datasets before saving preset.");
+                            return;
+                        }
 
-                               var result = await apiClient.RunComparisonAsync(new SmartEnergyExpert.Client.Services.CreateComparisonRequestDto
-                               {
-                                   SimulationDatasetId = ParseDatasetId(selectedSimulation.Value),
-                                   FieldDatasetId = ParseDatasetId(selectedField.Value),
-                                   TopN = 15
-                               });
-                               latestResult.Set(result);
-                               statusMessage.Set("Comparison completed.");
-                           }
-                           catch (Exception ex)
-                           {
-                               statusMessage.Set($"Failed to run comparison: {ex.Message}");
-                           }
-                       }))
-               | (datasetsQuery.Error is { } queryError
-                   ? Callout.Warning($"Failed to load datasets: {queryError.Message}")
-                   : new Fragment())
-               | (string.IsNullOrWhiteSpace(statusMessage.Value) ? new Fragment() : Callout.Info(statusMessage.Value))
-               | (latestResult.Value is null
-                   ? new Fragment()
-                   : BuildSummaryCard(latestResult.Value))
-               | (latestResult.Value is null
-                   ? new Fragment()
-                   : new Card(
+                        var name = string.IsNullOrWhiteSpace(presetName.Value) ? $"Preset {DateTimeOffset.UtcNow:HH:mm:ss}" : presetName.Value.Trim();
+                        var next = presets.Value.ToList();
+                        next.Add(new ComparisonPreset(name, simId, fieldId, (int)topN.Value));
+                        presets.Set(next);
+                        selectedPreset.Set(name);
+                        status.Set("Preset saved.");
+                    })
+                    | new Button("Apply").Disabled(string.IsNullOrWhiteSpace(selectedPreset.Value)).OnClick(() =>
+                    {
+                        var preset = presets.Value.FirstOrDefault(x => x.Name == selectedPreset.Value);
+                        if (preset is null)
+                        {
+                            status.Set("Preset not found.");
+                            return;
+                        }
+
+                        var sim = datasets.FirstOrDefault(x => x.Id == preset.SimulationDatasetId);
+                        var field = datasets.FirstOrDefault(x => x.Id == preset.FieldDatasetId);
+                        if (sim is null || field is null)
+                        {
+                            status.Set("Preset datasets missing.");
+                            return;
+                        }
+
+                        selectedSimulation.Set(ToOption(sim));
+                        selectedField.Set(ToOption(field));
+                        topN.Set(preset.TopN);
+                        status.Set("Preset applied.");
+                    })
+                    | new Button("Delete").Disabled(string.IsNullOrWhiteSpace(selectedPreset.Value)).OnClick(() =>
+                    {
+                        var next = presets.Value.Where(x => x.Name != selectedPreset.Value).ToList();
+                        presets.Set(next);
+                        selectedPreset.Set("");
+                        status.Set("Preset deleted.");
+                    })));
+        }
+
+        private static object BuildResultCards(ClientServices.ComparisonResultDto result)
+        {
+            return Layout.Vertical().Gap(2)
+                   | new Card(
+                       Layout.Vertical()
+                       | Text.H3("Quick Summary")
+                       | Text.Block(result.SignificantDifferenceCount == 0
+                           ? "Model matches field data well for this run."
+                           : "Model needs tuning for part of the compared points."))
+                   | new Card(
                        Layout.Vertical()
                        | Text.H3("Metrics")
-                       | Text.Block($"MAE: {latestResult.Value.Mae:F3} (average absolute mismatch)")
-                       | Text.Block($"RMSE: {latestResult.Value.Rmse:F3} (penalizes larger spikes)")
-                       | Text.Block($"MRE: {latestResult.Value.MeanRelativeErrorPercent:F2}% (average relative mismatch)")
-                       | Text.Block($"P95 |error|: {latestResult.Value.P95AbsoluteError:F3} (95th percentile)")
-                       | Text.Block($"Significant points: {latestResult.Value.SignificantDifferenceCount}/{latestResult.Value.TotalComparedPoints}")
-                       | Text.Muted(InterpretMetrics(latestResult.Value))))
-               | (latestResult.Value is null
-                   ? new Fragment()
-                   : new Card(
+                       | Text.Block($"MAE: {result.Mae:F3}")
+                       | Text.Block($"RMSE: {result.Rmse:F3}")
+                       | Text.Block($"MRE: {result.MeanRelativeErrorPercent:F2}%")
+                       | Text.Block($"P95: {result.P95AbsoluteError:F3}")
+                       | Text.Block($"Significant points: {result.SignificantDifferenceCount}/{result.TotalComparedPoints}"))
+                   | new Card(
                        Layout.Vertical()
                        | Text.H3("Top Differences")
-                       | new List(latestResult.Value.TopDifferences.Select(x =>
-                           new ListItem(
-                               $"{x.Timestamp:HH:mm:ss.fff} | {x.FrequencyBand} Hz | model={x.SimulationValue:F2}, field={x.FieldValue:F2}, rel={x.RelativeErrorPercent:F1}% | {x.Severity.ToUpperInvariant()}. {x.Explanation}")))))
-               | (latestResult.Value is null
-                   ? new Fragment()
-                   : new Card(
+                       | new List(result.TopDifferences.Take(12).Select(x =>
+                           new ListItem($"{x.Timestamp:HH:mm:ss.fff} | {x.FrequencyBand}Hz | rel={x.RelativeErrorPercent:F1}% | {x.Severity.ToUpperInvariant()}"))))
+                   | new Card(
                        Layout.Vertical()
                        | Text.H3("Recommendations")
-                       | new List(latestResult.Value.Recommendations.Select(x =>
-                           new ListItem($"{FriendlyReasonCode(x.ReasonCode)} ({x.Confidence:P0}). {x.SuggestedAction}")))));
+                       | new List(result.Recommendations.Select(x =>
+                           new ListItem($"{x.ReasonCode} ({x.Confidence:P0}) — {x.SuggestedAction}"))));
+        }
     }
 
-    private static string ToOption(SmartEnergyExpert.Client.Services.DatasetDto dataset) =>
+    private sealed class ChartsBlade(ClientServices.ComparisonResultDto result) : ViewBase
+    {
+        public override object? Build()
+        {
+            var metricRows = new[]
+            {
+                new { Metric = "MAE", Value = (double)result.Mae },
+                new { Metric = "RMSE", Value = (double)result.Rmse },
+                new { Metric = "MRE", Value = (double)result.MeanRelativeErrorPercent },
+                new { Metric = "P95", Value = (double)result.P95AbsoluteError }
+            };
+
+            var trendRows = result.TopDifferences
+                .Take(20)
+                .Select(x => new { Time = x.Timestamp.ToString("HH:mm:ss.fff"), Value = (double)x.RelativeErrorPercent })
+                .ToArray();
+
+            return Layout.Vertical().Gap(2)
+                   | Text.H3("Charts")
+                   | new Card(
+                       Layout.Vertical()
+                       | Text.Block("Metric comparison")
+                       | metricRows.ToBarChart(
+                           e => e.Metric,
+                           [e => e.Sum(v => v.Value)],
+                           BarChartStyles.Default))
+                   | new Card(
+                       Layout.Vertical()
+                       | Text.Block("Top difference trend")
+                       | trendRows.ToLineChart(
+                           e => e.Time,
+                           [e => e.Sum(v => v.Value)],
+                           LineChartStyles.Dashboard));
+        }
+    }
+
+    private static string ToOption(ClientServices.DatasetDto dataset) =>
         $"{dataset.Name} | {dataset.SourceSystem} | {dataset.SampleCount} samples [{dataset.Id}]";
+
+    private static Guid TryParseDatasetId(string value)
+    {
+        try
+        {
+            return ParseDatasetId(value);
+        }
+        catch
+        {
+            return Guid.Empty;
+        }
+    }
 
     private static Guid ParseDatasetId(string value)
     {
@@ -212,63 +245,5 @@ public sealed class EvaluationsApp : ViewBase
         }
 
         return Guid.Parse(value.Substring(openIndex + 1, closeIndex - openIndex - 1));
-    }
-
-    private static object BuildSummaryCard(SmartEnergyExpert.Client.Services.ComparisonResultDto result)
-    {
-        var verdict = result.SignificantDifferenceCount switch
-        {
-            0 => "Model matches field data well for this run.",
-            <= 10 => "Model is mostly aligned, but a few points need review.",
-            _ => "Model requires tuning before relying on these predictions."
-        };
-
-        return new Card(
-            Layout.Vertical()
-            | Text.H3("Quick Summary")
-            | Text.Block(verdict));
-    }
-
-    private static string InterpretMetrics(SmartEnergyExpert.Client.Services.ComparisonResultDto result)
-    {
-        if (result.MeanRelativeErrorPercent <= 5 && result.SignificantDifferenceCount == 0)
-        {
-            return "Interpretation: low mismatch level. This run is suitable as baseline evidence.";
-        }
-
-        if (result.MeanRelativeErrorPercent <= 15)
-        {
-            return "Interpretation: moderate mismatch. Review top differences before final conclusion.";
-        }
-
-        return "Interpretation: high mismatch. Recalibration or model/environment parameter update is recommended.";
-    }
-
-    private static string FriendlyReasonCode(string code) =>
-        code switch
-        {
-            "MODEL_ACCEPTABLE" => "Model is acceptable",
-            "FREQ_MODEL_MISMATCH" => "Frequency response mismatch",
-            "CALIBRATION_DRIFT" => "Calibration drift suspected",
-            "ENVIRONMENT_VARIANCE" => "Environment mismatch suspected",
-            _ => code
-        };
-
-    private static string BuildSampleCsv()
-    {
-        var start = DateTimeOffset.UtcNow.AddMinutes(-10);
-        var rows = new List<string>
-        {
-            "timestamp,frequencyBand,amplitudeDb,depthMeters,rangeMeters,soundSpeed,noiseLevelDb"
-        };
-
-        for (var i = 0; i < 10; i++)
-        {
-            var timestamp = start.AddMinutes(i).ToString("o");
-            rows.Add($"{timestamp},400,{-71 + i * 0.1m:F3},60,{1000 + i * 10},1498.0,-89.0");
-            rows.Add($"{timestamp},800,{-69 + i * 0.1m:F3},60,{1000 + i * 10},1498.1,-88.5");
-        }
-
-        return string.Join("\n", rows);
     }
 }
