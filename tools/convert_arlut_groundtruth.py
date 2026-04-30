@@ -26,6 +26,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--field-out", required=True, help="Output CSV path for field dataset.")
     parser.add_argument("--simulation-out", required=True, help="Output CSV path for synthetic simulation dataset.")
     parser.add_argument("--sample-step", type=int, default=1000, help="Take every N-th sample from each MAT waveform.")
+    parser.add_argument("--silence-threshold", type=float, default=1e-4, help="Skip samples with abs(value) below this threshold.")
+    parser.add_argument("--db-floor", type=float, default=-120.0, help="Minimum dB floor for exported amplitudes.")
     return parser.parse_args()
 
 
@@ -48,6 +50,8 @@ def main() -> None:
     field_out = Path(args.field_out)
     simulation_out = Path(args.simulation_out)
     step = max(1, args.sample_step)
+    silence_threshold = max(0.0, args.silence_threshold)
+    db_floor = float(args.db_floor)
 
     annotations_path = groundtruth_dir / "annotations.mat"
     if not annotations_path.exists():
@@ -75,7 +79,10 @@ def main() -> None:
 
         for i in range(0, waveform.size, step):
             sample = float(waveform[i])
-            amplitude_db = 20.0 * np.log10(abs(sample) + 1e-9)
+            if abs(sample) < silence_threshold:
+                continue
+
+            amplitude_db = max(db_floor, 20.0 * np.log10(abs(sample)))
             timestamp = base_time + np.timedelta64(global_index, "ms")
             timestamp_str = str(timestamp) + "Z"
 
@@ -85,7 +92,8 @@ def main() -> None:
             )
 
             # Synthetic simulation row: slightly biased/smoothed variant for model-vs-field.
-            simulation_amplitude = amplitude_db * 0.97 + 0.6
+            # Synthetic model variant: small deterministic bias + mild offset.
+            simulation_amplitude = amplitude_db + 0.8 + np.sin(global_index / 25.0) * 0.35
             simulation_rows.append(
                 f"{timestamp_str},{frequency:.3f},{simulation_amplitude:.6f},37.0,{range_meters:.3f},1487.0,{-91.0 + power:.3f}"
             )

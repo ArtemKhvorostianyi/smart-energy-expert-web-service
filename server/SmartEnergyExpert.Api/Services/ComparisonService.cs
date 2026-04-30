@@ -35,9 +35,10 @@ public sealed class ComparisonService(AppDbContext dbContext) : IComparisonServi
             }
 
             var absError = Math.Abs(simulation.AmplitudeDb - field.AmplitudeDb);
-            var relErrorPercent = field.AmplitudeDb == 0
-                ? 0
-                : Math.Abs((simulation.AmplitudeDb - field.AmplitudeDb) / field.AmplitudeDb) * 100;
+            // Amplitude in dB can be near zero, which makes relative error unstable.
+            // Use a floor reference to keep MRE interpretable for demo/operational use.
+            var refMagnitude = Math.Max(Math.Abs(field.AmplitudeDb), 20m);
+            var relErrorPercent = Math.Abs(simulation.AmplitudeDb - field.AmplitudeDb) / refMagnitude * 100;
             var severity = relErrorPercent switch
             {
                 >= 40 => "critical",

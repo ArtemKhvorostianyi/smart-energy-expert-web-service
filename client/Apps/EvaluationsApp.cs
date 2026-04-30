@@ -189,7 +189,7 @@ public sealed class EvaluationsApp : ViewBase
                        | Text.H3("Top Differences")
                        | new List(latestResult.Value.TopDifferences.Select(x =>
                            new ListItem(
-                               $"{x.Timestamp:HH:mm} | {x.FrequencyBand} Hz | model={x.SimulationValue:F2}, field={x.FieldValue:F2}, rel={x.RelativeErrorPercent:F1}% | {x.Severity.ToUpperInvariant()}. {x.Explanation}")))))
+                               $"{x.Timestamp:HH:mm:ss.fff} | {x.FrequencyBand} Hz | model={x.SimulationValue:F2}, field={x.FieldValue:F2}, rel={x.RelativeErrorPercent:F1}% | {x.Severity.ToUpperInvariant()}. {x.Explanation}")))))
                | (latestResult.Value is null
                    ? new Fragment()
                    : new Card(
