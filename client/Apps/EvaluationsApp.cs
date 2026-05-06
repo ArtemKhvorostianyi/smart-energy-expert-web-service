@@ -58,8 +58,11 @@ public sealed class EvaluationsApp : ViewBase
                            Layout.Vertical()
                            | Text.H3("Selection")
                            | (datasetsQuery.Loading ? Skeleton.Card() : selectedSimulation.ToSelectInput(simOptions))
+                           | Text.Muted("Simulation dataset: the modeled hydroacoustic signal output.")
                            | (datasetsQuery.Loading ? Skeleton.Card() : selectedField.ToSelectInput(fieldOptions))
+                           | Text.Muted("Field dataset: the measured signal from the real experiment.")
                            | topN.ToNumberInput(min: 5, max: 100).Placeholder("Top-N")
+                           | Text.Muted("Top-N controls how many largest mismatches are displayed.")
                            | new Button("Run Comparison").Primary().Disabled(!canRun).OnClick(async () =>
                            {
                                try
@@ -104,6 +107,7 @@ public sealed class EvaluationsApp : ViewBase
                 Layout.Vertical()
                 | Text.H3("Presets")
                 | presetName.ToTextInput().Placeholder("Preset name")
+                | Text.Muted("Enter a human-readable name for this reusable comparison configuration.")
                 | (presetOptions.Length == 0 ? Text.Muted("No presets.") : selectedPreset.ToSelectInput(presetOptions))
                 | (Layout.Horizontal().Gap(2)
                     | new Button("Save").OnClick(() =>
@@ -156,6 +160,12 @@ public sealed class EvaluationsApp : ViewBase
 
         private static object BuildResultCards(ClientServices.ComparisonResultDto result)
         {
+            var recommendationsStack = Layout.Vertical().Gap(2);
+            foreach (var rec in result.Recommendations)
+            {
+                recommendationsStack |= BuildRecommendationCard(rec);
+            }
+
             return Layout.Vertical().Gap(2)
                    | new Card(
                        Layout.Vertical()
@@ -170,7 +180,17 @@ public sealed class EvaluationsApp : ViewBase
                        | Text.Block($"RMSE: {result.Rmse:F3}")
                        | Text.Block($"MRE: {result.MeanRelativeErrorPercent:F2}%")
                        | Text.Block($"P95: {result.P95AbsoluteError:F3}")
-                       | Text.Block($"Significant points: {result.SignificantDifferenceCount}/{result.TotalComparedPoints}"))
+                       | Text.Block($"Significant points: {result.SignificantDifferenceCount}/{result.TotalComparedPoints}")
+                       | Text.Muted("Severity buckets use relative amplitude error (%): LOW < 2%; MODERATE 2–5%; HIGH 5–10%; CRITICAL > 10%."))
+                   | new Card(
+                       Layout.Vertical()
+                       | Text.H3("Temporal clusters (Top mismatches)")
+                       | (result.TemporalClusters.Length == 0
+                           ? Text.Muted("Clusters appear when bursts of samples share the same band and timestamps within ~75ms.")
+                           : new List(result.TemporalClusters.Select(c =>
+                               new ListItem(
+                                   $"Cluster #{c.Ordinal}: {c.TimeStart:HH:mm:ss.fff}–{c.TimeEnd:HH:mm:ss.fff} | {c.FrequencyBand}Hz | "
+                                   + $"n={c.PointCount}, mean rel err {c.MeanRelativeErrorPercent:F1}%")))))
                    | new Card(
                        Layout.Vertical()
                        | Text.H3("Top Differences")
@@ -178,10 +198,38 @@ public sealed class EvaluationsApp : ViewBase
                            new ListItem($"{x.Timestamp:HH:mm:ss.fff} | {x.FrequencyBand}Hz | rel={x.RelativeErrorPercent:F1}% | {x.Severity.ToUpperInvariant()}"))))
                    | new Card(
                        Layout.Vertical()
-                       | Text.H3("Recommendations")
-                       | new List(result.Recommendations.Select(x =>
-                           new ListItem($"{x.ReasonCode} ({x.Confidence:P0}) — {x.SuggestedAction}"))));
+                       | Text.H3("Decision support (recommendations)")
+                       | Text.Muted("Each finding is a rule-engine hypothesis with explicit evidence — not an ML black box.")
+                       | recommendationsStack);
         }
+
+        private static object BuildRecommendationCard(ClientServices.RecommendationDto rec)
+        {
+            var title = $"{CategoryTitle(rec.Category)} · {rec.ReasonCode.Replace('_', ' ')}";
+            return new Card(
+                Layout.Vertical().Gap(1)
+                       | Text.H4(title)
+                       | Text.Block($"Confidence: {rec.Confidence:P0}")
+                       | Text.Muted($"Method: {rec.InferenceMethod}")
+                       | Text.Block(rec.ConfidenceRationale)
+                       | Text.Block(rec.Explanation)
+                       | Text.H4("Evidence")
+                       | (rec.EvidenceSignals.Length == 0
+                           ? Text.Muted("No structured evidence rows.")
+                           : new List(rec.EvidenceSignals.Select(s => new ListItem(s))))
+                       | Text.Block($"Suggested action: {rec.SuggestedAction}"));
+        }
+
+        private static string CategoryTitle(string category) => category switch
+        {
+            "ENVIRONMENT_VARIANCE" => "Environment / SSP & noise coupling",
+            "SENSOR_DRIFT" => "Sensor calibration bias",
+            "MODEL_MISMATCH" => "Global propagation model mismatch",
+            "NOISE_INTERFERENCE" => "Broadband noise / episodic masking",
+            "FREQUENCY_ATTENUATION" => "Band-limited coupling / attenuation tilt",
+            "ACCEPTABLE_MODEL" => "Acceptable agreement",
+            _ => category
+        };
     }
 
     private sealed class ChartsBlade(ClientServices.ComparisonResultDto result) : ViewBase
@@ -198,7 +246,37 @@ public sealed class EvaluationsApp : ViewBase
 
             var trendRows = result.TopDifferences
                 .Take(20)
-                .Select(x => new { Time = x.Timestamp.ToString("HH:mm:ss.fff"), Value = (double)x.RelativeErrorPercent })
+                .Select(x => new
+                {
+                    Time = x.Timestamp.ToString("HH:mm:ss.fff"),
+                    RelativeError = (double)x.RelativeErrorPercent,
+                    AbsoluteError = (double)x.AbsoluteError
+                })
+                .ToArray();
+
+            var severityRows = result.TopDifferences
+                .GroupBy(x => x.Severity)
+                .Select(g => new { Severity = g.Key, Count = g.Count() })
+                .ToArray();
+
+            var overlayBand = result.OverlaySeries.FirstOrDefault()?.FrequencyBand ?? 0m;
+            var overlayRows = result.OverlaySeries
+                .Select(x => new
+                {
+                    Time = x.Timestamp.ToString("HH:mm"),
+                    Sim = (double)x.SimulationDb,
+                    Field = (double)x.FieldDb
+                })
+                .ToArray();
+
+            var heatmapRows = result.MismatchHeatmap
+                .OrderByDescending(x => x.MaxRelativeErrorPercent)
+                .Take(32)
+                .Select(x => new
+                {
+                    Cell = $"{x.FrequencyBand}Hz @ {x.TimeBucket}",
+                    Error = (double)x.MaxRelativeErrorPercent
+                })
                 .ToArray();
 
             return Layout.Vertical().Gap(2)
@@ -209,14 +287,45 @@ public sealed class EvaluationsApp : ViewBase
                        | metricRows.ToBarChart(
                            e => e.Metric,
                            [e => e.Sum(v => v.Value)],
-                           BarChartStyles.Default))
+                           BarChartStyles.Default)
+                       | Text.Muted("This chart summarizes global quality indicators for the current run."))
                    | new Card(
                        Layout.Vertical()
-                       | Text.Block("Top difference trend")
+                       | Text.Block(
+                           $"Overlay: simulation vs field (dominant scrutiny band ~ {overlayBand} Hz)")
+                       | (overlayRows.Length == 0
+                           ? Text.Muted("No overlay samples returned for this run.")
+                           : overlayRows.ToLineChart(
+                               e => e.Time,
+                               [e => e.Sum(v => v.Sim), e => e.Sum(v => v.Field)],
+                               LineChartStyles.Dashboard))
+                       | Text.Muted("Two amplitude traces on the dominant mismatch band illustrate where the simulator tracks the recorder."))
+                   | new Card(
+                       Layout.Vertical()
+                       | Text.Block("Mismatch heatmap (minute × frequency, max relative error)")
+                       | (heatmapRows.Length == 0
+                           ? Text.Muted("No heatmap aggregates available.")
+                           : heatmapRows.ToBarChart(
+                               e => e.Cell,
+                               [e => e.Sum(v => v.Error)],
+                               BarChartStyles.Default))
+                       | Text.Muted("Bars mimic a heat-intensity ranking: tallest cells are the hottest frequency-time buckets."))
+                   | new Card(
+                       Layout.Vertical()
+                       | Text.Block("Top difference trend: relative vs absolute")
                        | trendRows.ToLineChart(
                            e => e.Time,
-                           [e => e.Sum(v => v.Value)],
-                           LineChartStyles.Dashboard));
+                           [e => e.Sum(v => v.RelativeError), e => e.Sum(v => v.AbsoluteError)],
+                           LineChartStyles.Dashboard)
+                       | Text.Muted("Relative and absolute errors for the fiercest outliers."))
+                   | new Card(
+                       Layout.Vertical()
+                       | Text.Block("Severity distribution (Top-N)")
+                       | severityRows.ToPieChart(
+                           e => e.Severity,
+                           e => e.Sum(v => v.Count),
+                           PieChartStyles.Default)
+                       | Text.Muted("Share of LOW/MODERATE/HIGH/CRITICAL among the surfaced Top-N list."));
         }
     }
 

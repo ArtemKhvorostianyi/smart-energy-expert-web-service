@@ -106,6 +106,18 @@ public sealed class RecommendationDto
     [JsonPropertyName("reasonCode")]
     public string ReasonCode { get; init; } = string.Empty;
 
+    [JsonPropertyName("category")]
+    public string Category { get; init; } = string.Empty;
+
+    [JsonPropertyName("inferenceMethod")]
+    public string InferenceMethod { get; init; } = string.Empty;
+
+    [JsonPropertyName("confidenceRationale")]
+    public string ConfidenceRationale { get; init; } = string.Empty;
+
+    [JsonPropertyName("evidenceSignals")]
+    public string[] EvidenceSignals { get; init; } = [];
+
     [JsonPropertyName("explanation")]
     public string Explanation { get; init; } = string.Empty;
 
@@ -114,6 +126,54 @@ public sealed class RecommendationDto
 
     [JsonPropertyName("confidence")]
     public decimal Confidence { get; init; }
+}
+
+public sealed class OverlaySeriesPointDto
+{
+    [JsonPropertyName("timestamp")]
+    public DateTimeOffset Timestamp { get; init; }
+
+    [JsonPropertyName("frequencyBand")]
+    public decimal FrequencyBand { get; init; }
+
+    [JsonPropertyName("simulationDb")]
+    public decimal SimulationDb { get; init; }
+
+    [JsonPropertyName("fieldDb")]
+    public decimal FieldDb { get; init; }
+}
+
+public sealed class HeatmapCellDto
+{
+    [JsonPropertyName("timeBucket")]
+    public string TimeBucket { get; init; } = string.Empty;
+
+    [JsonPropertyName("frequencyBand")]
+    public decimal FrequencyBand { get; init; }
+
+    [JsonPropertyName("maxRelativeErrorPercent")]
+    public decimal MaxRelativeErrorPercent { get; init; }
+}
+
+public sealed class DifferenceClusterDto
+{
+    [JsonPropertyName("ordinal")]
+    public int Ordinal { get; init; }
+
+    [JsonPropertyName("timeStart")]
+    public DateTimeOffset TimeStart { get; init; }
+
+    [JsonPropertyName("timeEnd")]
+    public DateTimeOffset TimeEnd { get; init; }
+
+    [JsonPropertyName("frequencyBand")]
+    public decimal FrequencyBand { get; init; }
+
+    [JsonPropertyName("pointCount")]
+    public int PointCount { get; init; }
+
+    [JsonPropertyName("meanRelativeErrorPercent")]
+    public decimal MeanRelativeErrorPercent { get; init; }
 }
 
 public sealed class ComparisonResultDto
@@ -141,6 +201,15 @@ public sealed class ComparisonResultDto
 
     [JsonPropertyName("topDifferences")]
     public DifferencePointDto[] TopDifferences { get; init; } = [];
+
+    [JsonPropertyName("overlaySeries")]
+    public OverlaySeriesPointDto[] OverlaySeries { get; init; } = [];
+
+    [JsonPropertyName("mismatchHeatmap")]
+    public HeatmapCellDto[] MismatchHeatmap { get; init; } = [];
+
+    [JsonPropertyName("temporalClusters")]
+    public DifferenceClusterDto[] TemporalClusters { get; init; } = [];
 
     [JsonPropertyName("recommendations")]
     public RecommendationDto[] Recommendations { get; init; } = [];

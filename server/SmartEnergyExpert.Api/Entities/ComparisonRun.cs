@@ -14,6 +14,9 @@ public sealed class ComparisonRun
     public int SignificantDifferenceCount { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
+    /// <summary>Optional JSON payload for regenerated charts/clusters between sessions.</summary>
+    public string? VisualizationPayloadJson { get; set; }
+
     public Dataset? SimulationDataset { get; set; }
     public Dataset? FieldDataset { get; set; }
     public ICollection<DifferencePoint> Differences { get; set; } = new List<DifferencePoint>();

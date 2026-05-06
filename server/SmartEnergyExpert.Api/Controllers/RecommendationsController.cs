@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SmartEnergyExpert.Api.Data;
 using SmartEnergyExpert.Api.DTOs;
+using SmartEnergyExpert.Api.Mapping;
 
 namespace SmartEnergyExpert.Api.Controllers;
 
@@ -16,19 +17,12 @@ public sealed class RecommendationsController(AppDbContext dbContext) : Controll
         Guid comparisonRunId,
         CancellationToken cancellationToken = default)
     {
-        var result = await dbContext.Recommendations
+        var entities = await dbContext.Recommendations
             .AsNoTracking()
             .Where(x => x.ComparisonRunId == comparisonRunId)
             .OrderByDescending(x => x.Confidence)
-            .Select(x => new RecommendationResponse
-            {
-                ReasonCode = x.ReasonCode,
-                Explanation = x.Explanation,
-                SuggestedAction = x.SuggestedAction,
-                Confidence = x.Confidence
-            })
             .ToListAsync(cancellationToken);
 
-        return Ok(result);
+        return Ok(entities.Select(x => x.ToResponse()).ToList());
     }
 }

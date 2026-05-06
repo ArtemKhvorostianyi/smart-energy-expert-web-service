@@ -54,9 +54,38 @@ public sealed class DifferencePointResponse
 public sealed class RecommendationResponse
 {
     public string ReasonCode { get; init; } = string.Empty;
+    public string Category { get; init; } = string.Empty;
+    public string InferenceMethod { get; init; } = string.Empty;
+    public string ConfidenceRationale { get; init; } = string.Empty;
+    public IReadOnlyList<string> EvidenceSignals { get; init; } = [];
     public string Explanation { get; init; } = string.Empty;
     public string SuggestedAction { get; init; } = string.Empty;
     public decimal Confidence { get; init; }
+}
+
+public sealed class OverlaySeriesPointResponse
+{
+    public DateTimeOffset Timestamp { get; init; }
+    public decimal FrequencyBand { get; init; }
+    public decimal SimulationDb { get; init; }
+    public decimal FieldDb { get; init; }
+}
+
+public sealed class HeatmapCellResponse
+{
+    public string TimeBucket { get; init; } = string.Empty;
+    public decimal FrequencyBand { get; init; }
+    public decimal MaxRelativeErrorPercent { get; init; }
+}
+
+public sealed class DifferenceClusterResponse
+{
+    public int Ordinal { get; init; }
+    public DateTimeOffset TimeStart { get; init; }
+    public DateTimeOffset TimeEnd { get; init; }
+    public decimal FrequencyBand { get; init; }
+    public int PointCount { get; init; }
+    public decimal MeanRelativeErrorPercent { get; init; }
 }
 
 public sealed class ComparisonResultResponse
@@ -69,5 +98,8 @@ public sealed class ComparisonResultResponse
     public int TotalComparedPoints { get; init; }
     public int SignificantDifferenceCount { get; init; }
     public IReadOnlyList<DifferencePointResponse> TopDifferences { get; init; } = [];
+    public IReadOnlyList<OverlaySeriesPointResponse> OverlaySeries { get; init; } = [];
+    public IReadOnlyList<HeatmapCellResponse> MismatchHeatmap { get; init; } = [];
+    public IReadOnlyList<DifferenceClusterResponse> TemporalClusters { get; init; } = [];
     public IReadOnlyList<RecommendationResponse> Recommendations { get; init; } = [];
 }

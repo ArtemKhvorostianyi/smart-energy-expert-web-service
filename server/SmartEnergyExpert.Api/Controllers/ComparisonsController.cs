@@ -1,9 +1,11 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SmartEnergyExpert.Api.Data;
 using SmartEnergyExpert.Api.DTOs;
 using SmartEnergyExpert.Api.Entities;
+using SmartEnergyExpert.Api.Mapping;
 using SmartEnergyExpert.Api.Services;
 
 namespace SmartEnergyExpert.Api.Controllers;
@@ -13,6 +15,8 @@ namespace SmartEnergyExpert.Api.Controllers;
 [Authorize]
 public sealed class ComparisonsController(AppDbContext dbContext, IComparisonService comparisonService) : ControllerBase
 {
+    private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
+
     [HttpPost]
     [Authorize(Roles = "Admin,Expert")]
     public async Task<ActionResult<ComparisonResultResponse>> Run([FromBody] CreateComparisonRequest request, CancellationToken cancellationToken)
@@ -40,7 +44,8 @@ public sealed class ComparisonsController(AppDbContext dbContext, IComparisonSer
             MeanRelativeErrorPercent = computed.MeanRelativeErrorPercent,
             P95AbsoluteError = computed.P95AbsoluteError,
             TotalComparedPoints = computed.TotalComparedPoints,
-            SignificantDifferenceCount = computed.SignificantDifferenceCount
+            SignificantDifferenceCount = computed.SignificantDifferenceCount,
+            VisualizationPayloadJson = SerializeVisualization(computed.Visualization)
         };
 
         foreach (var point in computed.TopDifferences)
@@ -78,8 +83,48 @@ public sealed class ComparisonsController(AppDbContext dbContext, IComparisonSer
         return Ok(MapResult(run));
     }
 
-    private static ComparisonResultResponse MapResult(ComparisonRun run) =>
-        new()
+    private static string SerializeVisualization(ComparisonVisualizationComputation visualization)
+    {
+        var snapshot = new VisualizationSnapshotDto
+        {
+            DominantVisualizationFrequencyBand = visualization.DominantVisualizationFrequencyBand,
+            OverlaySeries = visualization.OverlaySeries
+                .Select(x => new OverlaySeriesPointResponse
+                {
+                    Timestamp = x.Timestamp,
+                    FrequencyBand = x.FrequencyBand,
+                    SimulationDb = x.SimulationDb,
+                    FieldDb = x.FieldDb
+                })
+                .ToList(),
+            MismatchHeatmap = visualization.HeatmapCells
+                .Select(x => new HeatmapCellResponse
+                {
+                    TimeBucket = x.TimeBucket,
+                    FrequencyBand = x.FrequencyBand,
+                    MaxRelativeErrorPercent = x.MaxRelativeErrorPercent
+                })
+                .ToList(),
+            TemporalClusters = visualization.TemporalClusters
+                .Select(x => new DifferenceClusterResponse
+                {
+                    Ordinal = x.Ordinal,
+                    TimeStart = x.TimeStart,
+                    TimeEnd = x.TimeEnd,
+                    FrequencyBand = x.FrequencyBand,
+                    PointCount = x.PointCount,
+                    MeanRelativeErrorPercent = x.MeanRelativeErrorPercent
+                })
+                .ToList()
+        };
+
+        return JsonSerializer.Serialize(snapshot, WebJson);
+    }
+
+    private static ComparisonResultResponse MapResult(ComparisonRun run)
+    {
+        var viz = TryDeserializeVisualization(run.VisualizationPayloadJson);
+        return new ComparisonResultResponse
         {
             ComparisonRunId = run.Id,
             Mae = run.Mae,
@@ -103,15 +148,38 @@ public sealed class ComparisonsController(AppDbContext dbContext, IComparisonSer
                     Explanation = x.Explanation
                 })
                 .ToArray(),
+            OverlaySeries = viz?.OverlaySeries ?? [],
+            MismatchHeatmap = viz?.MismatchHeatmap ?? [],
+            TemporalClusters = viz?.TemporalClusters ?? [],
             Recommendations = run.Recommendations
                 .OrderByDescending(x => x.Confidence)
-                .Select(x => new RecommendationResponse
-                {
-                    ReasonCode = x.ReasonCode,
-                    Explanation = x.Explanation,
-                    SuggestedAction = x.SuggestedAction,
-                    Confidence = x.Confidence
-                })
+                .Select(x => x.ToResponse())
                 .ToArray()
         };
+    }
+
+    private static VisualizationSnapshotDto? TryDeserializeVisualization(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<VisualizationSnapshotDto>(json, WebJson);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private sealed class VisualizationSnapshotDto
+    {
+        public decimal DominantVisualizationFrequencyBand { get; set; }
+        public List<OverlaySeriesPointResponse> OverlaySeries { get; set; } = [];
+        public List<HeatmapCellResponse> MismatchHeatmap { get; set; } = [];
+        public List<DifferenceClusterResponse> TemporalClusters { get; set; } = [];
+    }
 }
