@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SmartEnergyExpert.Api.Data;
@@ -11,9 +12,11 @@ using SmartEnergyExpert.Api.Data;
 namespace SmartEnergyExpert.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260430093133_HydroacousticRebuild")]
+    partial class HydroacousticRebuild
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -128,9 +131,6 @@ namespace SmartEnergyExpert.Api.Migrations
                     b.Property<int>("TotalComparedPoints")
                         .HasColumnType("integer");
 
-                    b.Property<string>("VisualizationPayloadJson")
-                        .HasColumnType("text");
-
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedAt");
@@ -234,32 +234,16 @@ namespace SmartEnergyExpert.Api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<string>("Category")
-                        .IsRequired()
-                        .HasColumnType("text");
-
                     b.Property<Guid>("ComparisonRunId")
                         .HasColumnType("uuid");
 
                     b.Property<decimal>("Confidence")
                         .HasColumnType("numeric");
 
-                    b.Property<string>("ConfidenceRationale")
-                        .IsRequired()
-                        .HasColumnType("text");
-
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("EvidenceSignalsJson")
-                        .IsRequired()
-                        .HasColumnType("text");
-
                     b.Property<string>("Explanation")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("InferenceMethod")
                         .IsRequired()
                         .HasColumnType("text");
 

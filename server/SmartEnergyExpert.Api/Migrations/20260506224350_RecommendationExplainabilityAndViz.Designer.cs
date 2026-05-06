@@ -12,8 +12,8 @@ using SmartEnergyExpert.Api.Data;
 namespace SmartEnergyExpert.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260423115538_InitialDomainSchema")]
-    partial class InitialDomainSchema
+    [Migration("20260506224350_RecommendationExplainabilityAndViz")]
+    partial class RecommendationExplainabilityAndViz
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -24,6 +24,43 @@ namespace SmartEnergyExpert.Api.Migrations
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+
+            modelBuilder.Entity("SmartEnergyExpert.Api.Entities.AcousticSample", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("AmplitudeDb")
+                        .HasColumnType("numeric");
+
+                    b.Property<Guid>("DatasetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("DepthMeters")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal>("FrequencyBand")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal?>("NoiseLevelDb")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal>("RangeMeters")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal?>("SoundSpeed")
+                        .HasColumnType("numeric");
+
+                    b.Property<DateTimeOffset>("Timestamp")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DatasetId", "Timestamp", "FrequencyBand");
+
+                    b.ToTable("AcousticSamples");
+                });
 
             modelBuilder.Entity("SmartEnergyExpert.Api.Entities.AuditLog", b =>
                 {
@@ -57,7 +94,7 @@ namespace SmartEnergyExpert.Api.Migrations
                     b.ToTable("AuditLogs");
                 });
 
-            modelBuilder.Entity("SmartEnergyExpert.Api.Entities.Criterion", b =>
+            modelBuilder.Entity("SmartEnergyExpert.Api.Entities.ComparisonRun", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -66,179 +103,132 @@ namespace SmartEnergyExpert.Api.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<decimal>("DefaultWeight")
+                    b.Property<Guid>("FieldDatasetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Mae")
                         .HasColumnType("numeric");
 
-                    b.Property<string>("Description")
+                    b.Property<decimal>("MeanRelativeErrorPercent")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal>("P95AbsoluteError")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal>("Rmse")
+                        .HasColumnType("numeric");
+
+                    b.Property<int>("SignificantDifferenceCount")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("SimulationDatasetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
+                    b.Property<int>("TotalComparedPoints")
+                        .HasColumnType("integer");
 
-                    b.Property<decimal>("MaxValue")
-                        .HasColumnType("numeric");
+                    b.Property<string>("VisualizationPayloadJson")
+                        .HasColumnType("text");
 
-                    b.Property<decimal>("MinValue")
-                        .HasColumnType("numeric");
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("FieldDatasetId");
+
+                    b.HasIndex("SimulationDatasetId");
+
+                    b.ToTable("ComparisonRuns");
+                });
+
+            modelBuilder.Entity("SmartEnergyExpert.Api.Entities.Dataset", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasMaxLength(120)
-                        .HasColumnType("character varying(120)");
+                        .HasColumnType("text");
+
+                    b.Property<string>("SourceSystem")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("TimeRangeEnd")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("TimeRangeStart")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Version")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
                     b.HasIndex("Name")
                         .IsUnique();
 
-                    b.ToTable("Criteria", t =>
-                        {
-                            t.HasCheckConstraint("CK_Criteria_DefaultWeight", "\"DefaultWeight\" > 0");
+                    b.HasIndex("Type", "SourceSystem");
 
-                            t.HasCheckConstraint("CK_Criteria_Range", "\"MinValue\" < \"MaxValue\"");
-                        });
+                    b.ToTable("Datasets");
                 });
 
-            modelBuilder.Entity("SmartEnergyExpert.Api.Entities.CriterionWeight", b =>
+            modelBuilder.Entity("SmartEnergyExpert.Api.Entities.DifferencePoint", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CriterionId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ExperimentType")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<decimal>("Weight")
+                    b.Property<decimal>("AbsoluteError")
                         .HasColumnType("numeric");
 
-                    b.HasKey("Id");
-
-                    b.HasIndex("CriterionId", "ExperimentType")
-                        .IsUnique();
-
-                    b.ToTable("CriterionWeights", t =>
-                        {
-                            t.HasCheckConstraint("CK_CriterionWeights_Weight", "\"Weight\" > 0");
-                        });
-                });
-
-            modelBuilder.Entity("SmartEnergyExpert.Api.Entities.Evaluation", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
+                    b.Property<Guid>("ComparisonRunId")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("Conclusion")
+                    b.Property<string>("Explanation")
+                        .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("ExperimentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ExpertId")
-                        .HasColumnType("uuid");
-
-                    b.Property<decimal>("IntegralScore")
+                    b.Property<decimal>("FieldValue")
                         .HasColumnType("numeric");
 
-                    b.Property<string>("RiskLevel")
-                        .IsRequired()
-                        .HasMaxLength(24)
-                        .HasColumnType("character varying(24)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ExperimentId");
-
-                    b.HasIndex("ExpertId");
-
-                    b.ToTable("Evaluations");
-                });
-
-            modelBuilder.Entity("SmartEnergyExpert.Api.Entities.Experiment", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("text");
-
-                    b.Property<string>("ExperimentType")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(24)
-                        .HasColumnType("character varying(24)");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatedBy");
-
-                    b.ToTable("Experiments");
-                });
-
-            modelBuilder.Entity("SmartEnergyExpert.Api.Entities.ExperimentParameter", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("ExperimentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset?>("MeasuredAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ParameterName")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Unit")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<decimal>("Value")
+                    b.Property<decimal>("FrequencyBand")
                         .HasColumnType("numeric");
 
+                    b.Property<decimal>("RelativeErrorPercent")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("SimulationValue")
+                        .HasColumnType("numeric");
+
+                    b.Property<DateTimeOffset>("Timestamp")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("ExperimentId");
+                    b.HasIndex("ComparisonRunId", "Severity", "Timestamp", "FrequencyBand");
 
-                    b.ToTable("ExperimentParameters");
+                    b.ToTable("DifferencePoints");
                 });
 
             modelBuilder.Entity("SmartEnergyExpert.Api.Entities.Recommendation", b =>
@@ -247,26 +237,46 @@ namespace SmartEnergyExpert.Api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("DecisionText")
+                    b.Property<string>("Category")
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<Guid>("EvaluationId")
+                    b.Property<Guid>("ComparisonRunId")
                         .HasColumnType("uuid");
 
-                    b.Property<bool>("IsExpertAdjusted")
-                        .HasColumnType("boolean");
+                    b.Property<decimal>("Confidence")
+                        .HasColumnType("numeric");
 
-                    b.Property<short>("Priority")
-                        .HasColumnType("smallint");
+                    b.Property<string>("ConfidenceRationale")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EvidenceSignalsJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Explanation")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("InferenceMethod")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ReasonCode")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SuggestedAction")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("EvaluationId")
-                        .IsUnique();
+                    b.HasIndex("ComparisonRunId", "Confidence");
 
                     b.ToTable("Recommendations");
                 });
@@ -332,6 +342,17 @@ namespace SmartEnergyExpert.Api.Migrations
                     b.ToTable("Users");
                 });
 
+            modelBuilder.Entity("SmartEnergyExpert.Api.Entities.AcousticSample", b =>
+                {
+                    b.HasOne("SmartEnergyExpert.Api.Entities.Dataset", "Dataset")
+                        .WithMany("Samples")
+                        .HasForeignKey("DatasetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Dataset");
+                });
+
             modelBuilder.Entity("SmartEnergyExpert.Api.Entities.AuditLog", b =>
                 {
                     b.HasOne("SmartEnergyExpert.Api.Entities.User", "User")
@@ -342,67 +363,45 @@ namespace SmartEnergyExpert.Api.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("SmartEnergyExpert.Api.Entities.CriterionWeight", b =>
+            modelBuilder.Entity("SmartEnergyExpert.Api.Entities.ComparisonRun", b =>
                 {
-                    b.HasOne("SmartEnergyExpert.Api.Entities.Criterion", "Criterion")
-                        .WithMany("CriterionWeights")
-                        .HasForeignKey("CriterionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Criterion");
-                });
-
-            modelBuilder.Entity("SmartEnergyExpert.Api.Entities.Evaluation", b =>
-                {
-                    b.HasOne("SmartEnergyExpert.Api.Entities.Experiment", "Experiment")
+                    b.HasOne("SmartEnergyExpert.Api.Entities.Dataset", "FieldDataset")
                         .WithMany()
-                        .HasForeignKey("ExperimentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("SmartEnergyExpert.Api.Entities.User", "Expert")
-                        .WithMany()
-                        .HasForeignKey("ExpertId")
+                        .HasForeignKey("FieldDatasetId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.Navigation("Experiment");
-
-                    b.Navigation("Expert");
-                });
-
-            modelBuilder.Entity("SmartEnergyExpert.Api.Entities.Experiment", b =>
-                {
-                    b.HasOne("SmartEnergyExpert.Api.Entities.User", "Creator")
+                    b.HasOne("SmartEnergyExpert.Api.Entities.Dataset", "SimulationDataset")
                         .WithMany()
-                        .HasForeignKey("CreatedBy")
+                        .HasForeignKey("SimulationDatasetId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.Navigation("Creator");
+                    b.Navigation("FieldDataset");
+
+                    b.Navigation("SimulationDataset");
                 });
 
-            modelBuilder.Entity("SmartEnergyExpert.Api.Entities.ExperimentParameter", b =>
+            modelBuilder.Entity("SmartEnergyExpert.Api.Entities.DifferencePoint", b =>
                 {
-                    b.HasOne("SmartEnergyExpert.Api.Entities.Experiment", "Experiment")
-                        .WithMany("Parameters")
-                        .HasForeignKey("ExperimentId")
+                    b.HasOne("SmartEnergyExpert.Api.Entities.ComparisonRun", "ComparisonRun")
+                        .WithMany("Differences")
+                        .HasForeignKey("ComparisonRunId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Experiment");
+                    b.Navigation("ComparisonRun");
                 });
 
             modelBuilder.Entity("SmartEnergyExpert.Api.Entities.Recommendation", b =>
                 {
-                    b.HasOne("SmartEnergyExpert.Api.Entities.Evaluation", "Evaluation")
-                        .WithOne("Recommendation")
-                        .HasForeignKey("SmartEnergyExpert.Api.Entities.Recommendation", "EvaluationId")
+                    b.HasOne("SmartEnergyExpert.Api.Entities.ComparisonRun", "ComparisonRun")
+                        .WithMany("Recommendations")
+                        .HasForeignKey("ComparisonRunId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Evaluation");
+                    b.Navigation("ComparisonRun");
                 });
 
             modelBuilder.Entity("SmartEnergyExpert.Api.Entities.User", b =>
@@ -416,19 +415,16 @@ namespace SmartEnergyExpert.Api.Migrations
                     b.Navigation("Role");
                 });
 
-            modelBuilder.Entity("SmartEnergyExpert.Api.Entities.Criterion", b =>
+            modelBuilder.Entity("SmartEnergyExpert.Api.Entities.ComparisonRun", b =>
                 {
-                    b.Navigation("CriterionWeights");
+                    b.Navigation("Differences");
+
+                    b.Navigation("Recommendations");
                 });
 
-            modelBuilder.Entity("SmartEnergyExpert.Api.Entities.Evaluation", b =>
+            modelBuilder.Entity("SmartEnergyExpert.Api.Entities.Dataset", b =>
                 {
-                    b.Navigation("Recommendation");
-                });
-
-            modelBuilder.Entity("SmartEnergyExpert.Api.Entities.Experiment", b =>
-                {
-                    b.Navigation("Parameters");
+                    b.Navigation("Samples");
                 });
 
             modelBuilder.Entity("SmartEnergyExpert.Api.Entities.Role", b =>

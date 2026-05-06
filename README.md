@@ -1,99 +1,87 @@
-# Smart Energy Expert Web Service
+# Hydroacoustic Expert Web Service
 
-Web service for expert evaluation of experiment results to support decision-making in energy cyber-physical systems.
+Local web service for comparing hydroacoustic modeling results with field experiment measurements.
 
-## Goal
-
-Build a scalable and secure web service that:
-
-- accepts experimental data;
-- performs multi-criteria evaluation;
-- determines risk level;
-- generates decision recommendations.
-
-## Planned Stack
+## Technology
 
 - Backend: ASP.NET Core Web API
-- Frontend: Ivy Framework
-- Database: PostgreSQL
-- ORM: Entity Framework Core
-- Auth: Ivy Basic Auth (client app access control)
+- UI: Ivy (single local client)
+- Database: PostgreSQL + Entity Framework Core
+- Auth: JWT on backend, Ivy Basic Auth in client
 
-## User Roles
+## Core domain
 
-- Admin
-- Expert
-- Operator
+- `Dataset` (simulation or field source)
+- `AcousticSample` (timestamped hydroacoustic point)
+- `ComparisonRun` (model-vs-field execution with metrics)
+- `DifferencePoint` (significant mismatches)
+- `Recommendation` (rule-based explanation and action)
 
-## Input Data
+## Localhost setup
 
-- experiment parameters;
-- measured values;
-- criterion weights;
-- allowed limits;
-- metadata (date, author, experiment type).
+- API: `http://localhost:5109`
+- PostgreSQL: `localhost:5432`, database `hydroacoustic_expert`
+- Ivy client calls backend via `BackendApi:BaseUrl` (default `http://localhost:5109/`)
 
-## Output Data
-
-- integral score;
-- risk category;
-- recommendation;
-- evaluation history;
-- report.
-
-## Repository Structure (Plan)
-
-```text
-/client
-/server
-/docs
-```
-
-## Backend Bootstrap
-
-Current backend status:
-
-- `ASP.NET Core Web API` project in `server/SmartEnergyExpert.Api`;
-- configured `Entity Framework Core` + `PostgreSQL provider`;
-- core entities, `DbContext`, DTOs, and controllers: `Auth`, `Experiments`, `Evaluations`;
-- baseline `evaluation service` for score/risk/recommendation calculation;
-- database bootstrap with initial role/user seed and `ExperimentParameters` API module.
-
-Run:
+## Run locally
 
 ```bash
 dotnet build SmartEnergyExpert.slnx
 dotnet run --project server/SmartEnergyExpert.Api
 ```
 
-Sample API flow:
-
-- `POST /api/experiments`
-- `POST /api/experiments/{experimentId}/parameters`
-- `POST /api/experiments/{experimentId}/evaluation`
-
-Ivy authentication setup:
-
-- `client/Program.cs` uses `server.UseAuth<BasicAuthProvider>()`.
-- Configure credentials interactively in the `client` folder:
-  - `ivy auth add --provider Basic`
-- Ivy stores generated secrets in .NET user-secrets for local development.
-
-## Ivy UI Bootstrap
-
-Current frontend status:
-
-- Ivy project in `client/`;
-- base apps: `Dashboard`, `Experiments`, `Evaluations`;
-- initial UX structure aligned with Admin/Expert/Operator roles and evaluation workflow.
-
-Run UI:
+In another terminal:
 
 ```bash
 cd client
+ivy auth add --provider Basic
 ivy run --browse
 ```
 
-## Status
+## API flow
 
-Current phase: repository bootstrap and baseline architecture are completed.
+- `GET /api/datasets`
+- `POST /api/comparisons`
+- `GET /api/differences/{comparisonRunId}`
+- `GET /api/recommendations/{comparisonRunId}`
+
+## Seed data
+
+On first start the API runs migrations and seeds:
+
+- default users/roles;
+- synthetic simulation dataset;
+- synthetic field dataset;
+- paired acoustic samples for immediate comparison testing.
+
+## Presentation Script (What to Say)
+
+Use this short script during your demo:
+
+1. **Problem statement**
+   - "This system compares hydroacoustic simulation output with field experiment measurements."
+   - "The goal is to detect significant mismatches and explain why they may happen."
+
+2. **Data setup**
+   - "I select one simulation dataset and one field dataset."
+   - "I can save this setup as a preset and reuse it for repeated experiments."
+
+3. **Comparison run**
+   - "Now I run model-vs-field comparison."
+   - "The backend computes MAE, RMSE, MRE, P95, and counts significant points."
+
+4. **Interpretation**
+   - "Low metrics mean good model adequacy."
+   - "Higher metrics and severity distribution indicate where model tuning is required."
+
+5. **Top differences and recommendations**
+   - "The system shows top mismatched points with timestamps and severity."
+   - "It provides recommendation codes and suggested actions for diagnostics."
+
+6. **Charts**
+   - "Bar chart summarizes global quality metrics."
+   - "Line chart shows relative/absolute error behavior."
+   - "Pie chart shows severity distribution across top differences."
+
+7. **Conclusion**
+   - "This gives a practical decision-support workflow for validating hydroacoustic models against field data."
