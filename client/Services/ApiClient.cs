@@ -9,6 +9,7 @@ namespace SmartEnergyExpert.Client.Services;
 public interface IApiClient
 {
     Task<IReadOnlyList<DatasetDto>> GetDatasetsAsync(CancellationToken cancellationToken = default);
+    Task<DatasetSignalOverviewDto?> GetDatasetSignalOverviewAsync(Guid datasetId, CancellationToken cancellationToken = default);
     Task<DatasetDto> CreateDatasetAsync(CreateDatasetRequestDto request, CancellationToken cancellationToken = default);
     Task<int> ImportCsvSamplesAsync(Guid datasetId, string csvContent, CancellationToken cancellationToken = default);
     Task<int> ImportCsvFileAsync(Guid datasetId, string filePath, CancellationToken cancellationToken = default);
@@ -38,6 +39,17 @@ public sealed class ApiClient : IApiClient
         await EnsureBackendAuthorizedAsync(cancellationToken);
         var data = await _httpClient.GetFromJsonAsync<List<DatasetDto>>("api/datasets", JsonOptions, cancellationToken);
         return data ?? [];
+    }
+
+    public async Task<DatasetSignalOverviewDto?> GetDatasetSignalOverviewAsync(
+        Guid datasetId,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureBackendAuthorizedAsync(cancellationToken);
+        return await _httpClient.GetFromJsonAsync<DatasetSignalOverviewDto>(
+            $"api/datasets/{datasetId}/overview",
+            JsonOptions,
+            cancellationToken);
     }
 
     public async Task<DatasetDto> CreateDatasetAsync(CreateDatasetRequestDto request, CancellationToken cancellationToken = default)
