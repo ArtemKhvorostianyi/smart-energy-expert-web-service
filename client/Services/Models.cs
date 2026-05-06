@@ -47,6 +47,54 @@ public sealed class DatasetDto
     public int SampleCount { get; init; }
 }
 
+public sealed class DatasetSignalOverviewDto
+{
+    [JsonPropertyName("datasetId")]
+    public Guid DatasetId { get; init; }
+
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = string.Empty;
+
+    [JsonPropertyName("type")]
+    public string Type { get; init; } = string.Empty;
+
+    [JsonPropertyName("sourceSystem")]
+    public string SourceSystem { get; init; } = string.Empty;
+
+    [JsonPropertyName("sampleCount")]
+    public int SampleCount { get; init; }
+
+    [JsonPropertyName("durationSeconds")]
+    public decimal DurationSeconds { get; init; }
+
+    [JsonPropertyName("frequencyMinHz")]
+    public decimal FrequencyMinHz { get; init; }
+
+    [JsonPropertyName("frequencyMaxHz")]
+    public decimal FrequencyMaxHz { get; init; }
+
+    [JsonPropertyName("distinctFrequencyBins")]
+    public int DistinctFrequencyBins { get; init; }
+
+    [JsonPropertyName("firstTimestamp")]
+    public DateTimeOffset FirstTimestamp { get; init; }
+
+    [JsonPropertyName("lastTimestamp")]
+    public DateTimeOffset LastTimestamp { get; init; }
+
+    [JsonPropertyName("peakAmplitudeDb")]
+    public decimal PeakAmplitudeDb { get; init; }
+
+    [JsonPropertyName("noiseFloorDb")]
+    public decimal NoiseFloorDb { get; init; }
+
+    [JsonPropertyName("meanAmplitudeDb")]
+    public decimal MeanAmplitudeDb { get; init; }
+
+    [JsonPropertyName("meanNoiseLevelDb")]
+    public decimal? MeanNoiseLevelDb { get; init; }
+}
+
 public sealed class CreateComparisonRequestDto
 {
     [JsonPropertyName("simulationDatasetId")]

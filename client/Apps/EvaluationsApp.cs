@@ -2,7 +2,7 @@ using ClientServices = SmartEnergyExpert.Client.Services;
 
 namespace SmartEnergyExpert.Client.Apps;
 
-[App(icon: Icons.Waves, title: "Hydroacoustic Comparison", searchHints: ["hydroacoustic", "comparison", "charts", "blades", "preset"])]
+[App(icon: Icons.Waves, title: "Hydroacoustic Comparison", searchHints: ["hydroacoustic", "comparison", "charts", "blades", "preset", "signal", "explorer", "dataset overview"])]
 public sealed class EvaluationsApp : ViewBase
 {
     public override object? Build() => UseBlades(() => new WorkspaceBlade(), "Hydroacoustic Comparison");
@@ -28,6 +28,30 @@ public sealed class EvaluationsApp : ViewBase
             var datasetsQuery = UseQuery(
                 key: (nameof(WorkspaceBlade), refreshTick.Value),
                 fetcher: async ct => await apiClient.GetDatasetsAsync(ct));
+            var simulationExplorerQuery = UseQuery(
+                key: ("sim-signal-explorer", refreshTick.Value, selectedSimulation.Value),
+                fetcher: async ct =>
+                {
+                    var id = TryParseDatasetId(selectedSimulation.Value);
+                    if (id == Guid.Empty)
+                    {
+                        return (ClientServices.DatasetSignalOverviewDto?)null;
+                    }
+
+                    return await apiClient.GetDatasetSignalOverviewAsync(id, ct);
+                });
+            var fieldExplorerQuery = UseQuery(
+                key: ("field-signal-explorer", refreshTick.Value, selectedField.Value),
+                fetcher: async ct =>
+                {
+                    var id = TryParseDatasetId(selectedField.Value);
+                    if (id == Guid.Empty)
+                    {
+                        return (ClientServices.DatasetSignalOverviewDto?)null;
+                    }
+
+                    return await apiClient.GetDatasetSignalOverviewAsync(id, ct);
+                });
             var datasets = datasetsQuery.Value ?? [];
             var simOptions = datasets.Where(x => x.Type == "simulation").Select(ToOption).ToArray();
             var fieldOptions = datasets.Where(x => x.Type == "field").Select(ToOption).ToArray();
@@ -60,9 +84,13 @@ public sealed class EvaluationsApp : ViewBase
                            | (datasetsQuery.Loading ? Skeleton.Card() : selectedSimulation.ToSelectInput(simOptions))
                            | Text.Muted("Simulation dataset: the modeled hydroacoustic signal output.")
                            | (datasetsQuery.Loading ? Skeleton.Card() : selectedField.ToSelectInput(fieldOptions))
-                           | Text.Muted("Field dataset: the measured signal from the real experiment.")
+                           | Text.Muted("Field dataset: the measured signal from the real experiment."))
+                       | BuildSignalExplorerCard(simulationExplorerQuery, fieldExplorerQuery)
+                       | new Card(
+                           Layout.Vertical()
+                           | Text.H3("Compare")
                            | topN.ToNumberInput(min: 5, max: 100).Placeholder("Top-N")
-                           | Text.Muted("Top-N controls how many largest mismatches are displayed.")
+                           | Text.Muted("After inspecting both signals, tune Top-N for how many outliers to analyze.")
                            | new Button("Run Comparison").Primary().Disabled(!canRun).OnClick(async () =>
                            {
                                try
@@ -90,6 +118,70 @@ public sealed class EvaluationsApp : ViewBase
                        | (datasetsQuery.Error is { } e ? Callout.Warning(e.Message) : new Fragment())
                        | (string.IsNullOrWhiteSpace(status.Value) ? new Fragment() : Callout.Info(status.Value))
                        | (result.Value is null ? new Fragment() : BuildResultCards(result.Value));
+        }
+
+        private static object BuildSignalExplorerCard(
+            QueryResult<ClientServices.DatasetSignalOverviewDto?> simulationExplorerQuery,
+            QueryResult<ClientServices.DatasetSignalOverviewDto?> fieldExplorerQuery)
+        {
+            return new Card(
+                Layout.Vertical().Gap(2)
+                | Text.H3("Signal explorer")
+                | Text.Muted("Flow: Dataset → inspect summaries here → interpret structure → Run comparison.")
+                | (Layout.Horizontal().Gap(4)
+                    | BuildExplorerHalfPanel("Simulation (model)", simulationExplorerQuery)
+                    | BuildExplorerHalfPanel("Field (measurement)", fieldExplorerQuery)));
+        }
+
+        private static object BuildExplorerHalfPanel(string role, QueryResult<ClientServices.DatasetSignalOverviewDto?> query)
+        {
+            if (query.Loading)
+            {
+                return Layout.Vertical().Gap(1).Width(Size.Fraction(0.48f))
+                       | Text.H4(role)
+                       | Skeleton.Card();
+            }
+
+            if (query.Error is { } err)
+            {
+                return Layout.Vertical().Gap(1).Width(Size.Fraction(0.48f))
+                       | Text.H4(role)
+                       | Callout.Warning(err.Message);
+            }
+
+            var o = query.Value;
+            if (o is null)
+            {
+                return Layout.Vertical().Gap(1).Width(Size.Fraction(0.48f))
+                       | Text.H4(role)
+                       | Text.Muted("Select a dataset in the list above to load signal-level statistics.");
+            }
+
+            if (o.SampleCount == 0)
+            {
+                return Layout.Vertical().Gap(1).Width(Size.Fraction(0.48f))
+                       | Text.H4(role)
+                       | Text.Block($"{o.Name} ({o.SourceSystem}) — no acoustic samples imported yet.")
+                       | Text.Muted("Upload/import CSV samples to populate explorer metrics.");
+            }
+
+            var durationText = o.DurationSeconds <= 0.0001m && o.SampleCount > 1
+                ? $"{o.SampleCount} samples aligned to overlapping timestamps."
+                : $"{o.SampleCount} samples spanning {FormatDurationHuman(o.DurationSeconds)}.";
+
+            return Layout.Vertical().Gap(1).Width(Size.Fraction(0.48f))
+                   | Text.H4(role)
+                   | Text.Block(o.Name).Bold()
+                   | Text.Block(durationText)
+                   | Text.Block(
+                       $"Frequency range: {FormatFrequencyRangeSummary(o.FrequencyMinHz, o.FrequencyMaxHz)} "
+                       + $"({o.DistinctFrequencyBins} distinct bins)")
+                   | Text.Block($"Peak amplitude: {o.PeakAmplitudeDb:F2} dB")
+                   | Text.Block(
+                       $"Noise floor (≈10th percentile amplitude): {o.NoiseFloorDb:F2} dB · Mean level: {o.MeanAmplitudeDb:F2} dB")
+                   | (o.MeanNoiseLevelDb is null
+                       ? Text.Muted("Measured noise-level column absent or empty.")
+                       : Text.Block($"Recorded noise telemetry (avg): {o.MeanNoiseLevelDb.Value:F2} dB"));
         }
 
         private static object BuildPresetCard(
@@ -354,5 +446,26 @@ public sealed class EvaluationsApp : ViewBase
         }
 
         return Guid.Parse(value.Substring(openIndex + 1, closeIndex - openIndex - 1));
+    }
+
+    private static string FormatFrequencyHz(decimal hz) =>
+        hz >= 1000m ? $"{hz / 1000m:N1} kHz" : $"{hz:N0} Hz";
+
+    private static string FormatFrequencyRangeSummary(decimal minHz, decimal maxHz) =>
+        $"{FormatFrequencyHz(minHz)} – {FormatFrequencyHz(maxHz)}";
+
+    private static string FormatDurationHuman(decimal seconds)
+    {
+        if (seconds >= 7200)
+        {
+            return $"{seconds / 3600m:N1} h";
+        }
+
+        if (seconds >= 120)
+        {
+            return $"{seconds / 60m:N1} min";
+        }
+
+        return $"{seconds:N3} s";
     }
 }

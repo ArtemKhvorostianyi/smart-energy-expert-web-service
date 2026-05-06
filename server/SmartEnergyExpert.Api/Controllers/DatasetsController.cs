@@ -35,6 +35,84 @@ public sealed class DatasetsController(AppDbContext dbContext) : ControllerBase
         return Ok(result);
     }
 
+    [HttpGet("{datasetId:guid}/overview")]
+    public async Task<ActionResult<DatasetSignalOverviewResponse>> GetSignalOverview(Guid datasetId, CancellationToken cancellationToken)
+    {
+        var dataset = await dbContext.Datasets.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == datasetId, cancellationToken);
+        if (dataset is null)
+        {
+            return NotFound("Dataset not found.");
+        }
+
+        var samplesQuery = dbContext.AcousticSamples.AsNoTracking().Where(x => x.DatasetId == datasetId);
+        var count = await samplesQuery.CountAsync(cancellationToken);
+        if (count == 0)
+        {
+            return Ok(new DatasetSignalOverviewResponse
+            {
+                DatasetId = dataset.Id,
+                Name = dataset.Name,
+                Type = dataset.Type,
+                SourceSystem = dataset.SourceSystem,
+                SampleCount = 0,
+                FrequencyMinHz = 0,
+                FrequencyMaxHz = 0,
+                DistinctFrequencyBins = 0,
+                FirstTimestamp = default,
+                LastTimestamp = default
+            });
+        }
+
+        var distinctFreq = await samplesQuery.Select(x => x.FrequencyBand).Distinct().CountAsync(cancellationToken);
+        var agg = await samplesQuery
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                MinTs = g.Min(x => x.Timestamp),
+                MaxTs = g.Max(x => x.Timestamp),
+                Fmin = g.Min(x => x.FrequencyBand),
+                Fmax = g.Max(x => x.FrequencyBand),
+                Peak = g.Max(x => x.AmplitudeDb),
+                MeanAmp = g.Average(x => x.AmplitudeDb)
+            })
+            .FirstAsync(cancellationToken);
+
+        var p10Index = (int)Math.Clamp(Math.Floor((count - 1) * 0.1m), 0, count - 1);
+        var noiseFloorDb = await samplesQuery.OrderBy(x => x.AmplitudeDb)
+            .Skip(p10Index)
+            .Select(x => x.AmplitudeDb)
+            .FirstAsync(cancellationToken);
+
+        decimal? meanNoiseLevel = await samplesQuery.AnyAsync(x => x.NoiseLevelDb != null, cancellationToken)
+            ? await samplesQuery.Where(x => x.NoiseLevelDb != null).AverageAsync(x => x.NoiseLevelDb!.Value, cancellationToken)
+            : null;
+
+        var durationSeconds =
+            agg.MaxTs == agg.MinTs
+                ? 0m
+                : decimal.Round((decimal)(agg.MaxTs - agg.MinTs).TotalSeconds, 4);
+
+        return Ok(new DatasetSignalOverviewResponse
+        {
+            DatasetId = dataset.Id,
+            Name = dataset.Name,
+            Type = dataset.Type,
+            SourceSystem = dataset.SourceSystem,
+            SampleCount = count,
+            DurationSeconds = durationSeconds,
+            FrequencyMinHz = agg.Fmin,
+            FrequencyMaxHz = agg.Fmax,
+            DistinctFrequencyBins = distinctFreq,
+            FirstTimestamp = agg.MinTs,
+            LastTimestamp = agg.MaxTs,
+            PeakAmplitudeDb = decimal.Round(agg.Peak, 4),
+            NoiseFloorDb = decimal.Round(noiseFloorDb, 4),
+            MeanAmplitudeDb = decimal.Round(agg.MeanAmp, 4),
+            MeanNoiseLevelDb = meanNoiseLevel is null ? null : decimal.Round(meanNoiseLevel.Value, 4)
+        });
+    }
+
     [HttpPost]
     [Authorize(Roles = "Admin,Expert")]
     public async Task<ActionResult<DatasetResponse>> Create([FromBody] CreateDatasetRequest request, CancellationToken cancellationToken)

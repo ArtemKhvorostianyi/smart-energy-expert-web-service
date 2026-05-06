@@ -12,6 +12,27 @@ public sealed class DatasetResponse
     public int SampleCount { get; init; }
 }
 
+/// <summary>Aggregates derived from acoustic samples for signal explorer / DSS inspect step.</summary>
+public sealed class DatasetSignalOverviewResponse
+{
+    public Guid DatasetId { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string Type { get; init; } = string.Empty;
+    public string SourceSystem { get; init; } = string.Empty;
+    public int SampleCount { get; init; }
+    public decimal DurationSeconds { get; init; }
+    public decimal FrequencyMinHz { get; init; }
+    public decimal FrequencyMaxHz { get; init; }
+    public int DistinctFrequencyBins { get; init; }
+    public DateTimeOffset FirstTimestamp { get; init; }
+    public DateTimeOffset LastTimestamp { get; init; }
+    public decimal PeakAmplitudeDb { get; init; }
+    /// <summary>Lower tail estimate (≈10th percentile of amplitude).</summary>
+    public decimal NoiseFloorDb { get; init; }
+    public decimal MeanAmplitudeDb { get; init; }
+    public decimal? MeanNoiseLevelDb { get; init; }
+}
+
 public sealed class CreateDatasetRequest
 {
     public string Name { get; init; } = string.Empty;
