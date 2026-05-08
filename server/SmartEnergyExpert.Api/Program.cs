@@ -36,6 +36,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddScoped<IComparisonService, ComparisonService>();
+builder.Services.AddScoped<IParameterSyntheticSimulationService, ParameterSyntheticSimulationService>();
 builder.Services.AddSingleton<DatabaseInitializer>();
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 

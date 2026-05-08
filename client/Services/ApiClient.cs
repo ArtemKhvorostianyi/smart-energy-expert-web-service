@@ -10,6 +10,9 @@ public interface IApiClient
 {
     Task<IReadOnlyList<DatasetDto>> GetDatasetsAsync(CancellationToken cancellationToken = default);
     Task<DatasetSignalOverviewDto?> GetDatasetSignalOverviewAsync(Guid datasetId, CancellationToken cancellationToken = default);
+    Task<DatasetDto> GenerateSimulationDatasetAsync(
+        GenerateSimulationDatasetRequestDto request,
+        CancellationToken cancellationToken = default);
     Task<DatasetDto> CreateDatasetAsync(CreateDatasetRequestDto request, CancellationToken cancellationToken = default);
     Task<int> ImportCsvSamplesAsync(Guid datasetId, string csvContent, CancellationToken cancellationToken = default);
     Task<int> ImportCsvFileAsync(Guid datasetId, string filePath, CancellationToken cancellationToken = default);
@@ -50,6 +53,17 @@ public sealed class ApiClient : IApiClient
             $"api/datasets/{datasetId}/overview",
             JsonOptions,
             cancellationToken);
+    }
+
+    public async Task<DatasetDto> GenerateSimulationDatasetAsync(
+        GenerateSimulationDatasetRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureBackendAuthorizedAsync(cancellationToken);
+        var response = await _httpClient.PostAsJsonAsync("api/datasets/generate-simulation", request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<DatasetDto>(JsonOptions, cancellationToken)
+               ?? throw new InvalidOperationException("Generate simulation response payload is empty.");
     }
 
     public async Task<DatasetDto> CreateDatasetAsync(CreateDatasetRequestDto request, CancellationToken cancellationToken = default)

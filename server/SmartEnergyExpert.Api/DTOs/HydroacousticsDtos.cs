@@ -1,5 +1,23 @@
 namespace SmartEnergyExpert.Api.DTOs;
 
+public sealed class GenerateSimulationDatasetRequest
+{
+    /// <summary>Desired dataset title (unique suffix added if collisions occur).</summary>
+    public string Name { get; init; } = "parameter-simulation";
+    public decimal DepthMeters { get; init; } = 60;
+    /// <summary>Sea temperature referenced to the operative layer.</summary>
+    public decimal TemperatureCelsius { get; init; } = 12;
+    /// <summary>Practical salinity (PSU/‰ scale for this DSS prototype).</summary>
+    public decimal SalinityPsu { get; init; } = 35;
+    /// <summary>Environmental noise floor assumption (negative dB re 1µPa illustrative units).</summary>
+    public decimal NoiseLevelDb { get; init; } = -92;
+    /// <summary>e.g. sand, mud, silt, rock, hard_rock.</summary>
+    public string BottomType { get; init; } = "sand";
+    public int DurationMinutes { get; init; } = 60;
+    public decimal[]? FrequencyBandsHz { get; init; }
+    public string? ModelVersion { get; init; }
+}
+
 public sealed class DatasetResponse
 {
     public Guid Id { get; init; }

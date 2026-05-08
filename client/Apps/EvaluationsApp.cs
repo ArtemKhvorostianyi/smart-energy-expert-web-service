@@ -9,9 +9,12 @@ public sealed class EvaluationsApp : ViewBase
 
     private sealed record ComparisonPreset(string Name, Guid SimulationDatasetId, Guid FieldDatasetId, int TopN);
 
-    private sealed class WorkspaceBlade : ViewBase
-    {
-        public override object? Build()
+        private sealed class WorkspaceBlade : ViewBase
+        {
+            private static readonly string[] SimulationBottomTypes =
+                ["sand", "mud", "silt", "clay_mud", "hard_rock", "rock", "granite"];
+
+            public override object? Build()
         {
             var apiClient = UseService<ClientServices.IApiClient>();
             var blades = UseContext<IBladeContext>();
@@ -24,6 +27,14 @@ public sealed class EvaluationsApp : ViewBase
             var presetName = UseState("");
             var selectedPreset = UseState("");
             var presets = UseState(new List<ComparisonPreset>());
+            var simStemName = UseState("parameter-simulation");
+            var depthM = UseState(60m);
+            var temperatureC = UseState(12m);
+            var salinityPsu = UseState(35m);
+            var noiseLevelDb = UseState(-92m);
+            var bottomType = UseState("sand");
+            var simDurationMinutes = UseState(60m);
+            var simGenBusy = UseState(false);
 
             var datasetsQuery = UseQuery(
                 key: (nameof(WorkspaceBlade), refreshTick.Value),
@@ -77,6 +88,19 @@ public sealed class EvaluationsApp : ViewBase
                            }))
                    | Layout.Vertical().Gap(2)
                        | Text.H2("Hydroacoustic Comparison")
+                       | BuildEnvironmentSimulationCard(
+                           apiClient,
+                           refreshTick,
+                           selectedSimulation,
+                           simStemName,
+                           depthM,
+                           temperatureC,
+                           salinityPsu,
+                           noiseLevelDb,
+                           bottomType,
+                           simDurationMinutes,
+                           simGenBusy,
+                           status)
                        | BuildPresetCard(presetName, selectedPreset, presets, selectedSimulation, selectedField, topN, datasets, status)
                        | new Card(
                            Layout.Vertical()
@@ -182,6 +206,77 @@ public sealed class EvaluationsApp : ViewBase
                    | (o.MeanNoiseLevelDb is null
                        ? Text.Muted("Measured noise-level column absent or empty.")
                        : Text.Block($"Recorded noise telemetry (avg): {o.MeanNoiseLevelDb.Value:F2} dB"));
+        }
+
+        private object BuildEnvironmentSimulationCard(
+            ClientServices.IApiClient apiClient,
+            IState<int> refreshTick,
+            IState<string> selectedSimulation,
+            IState<string> simStemName,
+            IState<decimal> depthM,
+            IState<decimal> temperatureC,
+            IState<decimal> salinityPsu,
+            IState<decimal> noiseLevelDb,
+            IState<string> bottomType,
+            IState<decimal> simDurationMinutes,
+            IState<bool> simGenBusy,
+            IState<string> status)
+        {
+            return new Card(
+                Layout.Vertical().Gap(1)
+                | Text.H3("Environment-based simulation")
+                | Text.Muted(
+                    "Ocean and seabed assumptions drive a synthetic SPL table — no CSV upload needed for modeled runs.")
+                | simStemName.ToTextInput().Placeholder("Simulation name stem")
+                | Text.Muted("Depth (m)")
+                | depthM.ToNumberInput(min: 1, max: 12_000)
+                | Text.Muted("Temperature (°C)")
+                | temperatureC.ToNumberInput(min: -2, max: 40)
+                | Text.Muted("Salinity (PSU)")
+                | salinityPsu.ToNumberInput(min: 0, max: 45)
+                | Text.Muted("Noise floor (dB re 1 µPa, illustrative)")
+                | noiseLevelDb.ToNumberInput(min: -120, max: -20)
+                | Text.Muted("Bottom type")
+                | bottomType.ToSelectInput(SimulationBottomTypes)
+                | Text.Muted("Duration (minutes)")
+                | simDurationMinutes.ToNumberInput(min: 1, max: 240)
+                | new Button("Generate simulation").Primary().Disabled(simGenBusy.Value).OnClick(async () =>
+                {
+                    if (simGenBusy.Value)
+                    {
+                        return;
+                    }
+
+                    simGenBusy.Set(true);
+                    try
+                    {
+                        var duration = (int)decimal.Round(decimal.Clamp(simDurationMinutes.Value, 1, 240), 0);
+                        var dto = new ClientServices.GenerateSimulationDatasetRequestDto
+                        {
+                            Name = string.IsNullOrWhiteSpace(simStemName.Value)
+                                ? "parameter-simulation"
+                                : simStemName.Value.Trim(),
+                            DepthMeters = decimal.Clamp(depthM.Value, 1, 12_000),
+                            TemperatureCelsius = decimal.Clamp(temperatureC.Value, -2, 40),
+                            SalinityPsu = decimal.Clamp(salinityPsu.Value, 0, 45),
+                            NoiseLevelDb = decimal.Clamp(noiseLevelDb.Value, -120, -20),
+                            BottomType = string.IsNullOrWhiteSpace(bottomType.Value) ? "sand" : bottomType.Value.Trim(),
+                            DurationMinutes = duration
+                        };
+                        var ds = await apiClient.GenerateSimulationDatasetAsync(dto);
+                        refreshTick.Set(refreshTick.Value + 1);
+                        selectedSimulation.Set(ToOption(ds));
+                        status.Set($"Generated simulation dataset '{ds.Name}' ({ds.SampleCount} samples). Source: {ds.SourceSystem}.");
+                    }
+                    catch (Exception ex)
+                    {
+                        status.Set($"Generate simulation failed: {ex.Message}");
+                    }
+                    finally
+                    {
+                        simGenBusy.Set(false);
+                    }
+                }));
         }
 
         private static object BuildPresetCard(

@@ -5,13 +5,16 @@ using System.Globalization;
 using SmartEnergyExpert.Api.Data;
 using SmartEnergyExpert.Api.DTOs;
 using SmartEnergyExpert.Api.Entities;
+using SmartEnergyExpert.Api.Services;
 
 namespace SmartEnergyExpert.Api.Controllers;
 
 [ApiController]
 [Route("api/datasets")]
 [Authorize]
-public sealed class DatasetsController(AppDbContext dbContext) : ControllerBase
+public sealed class DatasetsController(
+    AppDbContext dbContext,
+    IParameterSyntheticSimulationService parameterSyntheticSimulation) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<DatasetResponse>>> GetAll(CancellationToken cancellationToken)
@@ -33,6 +36,28 @@ public sealed class DatasetsController(AppDbContext dbContext) : ControllerBase
             .ToListAsync(cancellationToken);
 
         return Ok(result);
+    }
+
+    [HttpPost("generate-simulation")]
+    [Authorize(Roles = "Admin,Expert")]
+    public async Task<ActionResult<DatasetResponse>> GenerateParameterSimulation(
+        [FromBody] GenerateSimulationDatasetRequest request,
+        CancellationToken cancellationToken)
+    {
+        var (dataset, sampleCount) =
+            await parameterSyntheticSimulation.GenerateAndPersistAsync(dbContext, request, cancellationToken);
+
+        return Ok(new DatasetResponse
+        {
+            Id = dataset.Id,
+            Name = dataset.Name,
+            Type = dataset.Type,
+            SourceSystem = dataset.SourceSystem,
+            Version = dataset.Version,
+            TimeRangeStart = dataset.TimeRangeStart,
+            TimeRangeEnd = dataset.TimeRangeEnd,
+            SampleCount = sampleCount
+        });
     }
 
     [HttpGet("{datasetId:guid}/overview")]
