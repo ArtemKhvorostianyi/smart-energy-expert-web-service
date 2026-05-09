@@ -6,6 +6,8 @@ namespace SmartEnergyExpert.Client.Apps;
 [App(
     icon: Icons.Waves,
     title: "Гідроакустичне порівняння",
+    group: ["Сервіс"],
+    order: 30,
     searchHints:
     [
         "гідроакустика",

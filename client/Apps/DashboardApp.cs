@@ -1,6 +1,12 @@
 namespace SmartEnergyExpert.Client.Apps;
 
-[App(icon: Icons.LayoutDashboard, title: "Панель", searchHints: ["панель", "огляд", "що порівнюється", "датасети", "результат", "допомога"])]
+[App(
+    icon: Icons.LayoutDashboard,
+    title: "Панель",
+    group: ["Сервіс"],
+    order: 0,
+    groupExpanded: true,
+    searchHints: ["панель", "огляд", "що порівнюється", "датасети", "результат", "допомога"])]
 public sealed class DashboardApp : ViewBase
 {
     public override object? Build()

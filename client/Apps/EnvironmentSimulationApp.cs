@@ -6,7 +6,8 @@ namespace SmartEnergyExpert.Client.Apps;
 [App(
     icon: Icons.Waves,
     title: "Середовищна симуляція",
-    group: ["Датасети"],
+    group: ["Сервіс"],
+    order: 20,
     searchHints: ["середовище", "симуляція", "синтетичні", "параметри", "температура", "солоність", "глибина", "шум", "модель"])]
 public sealed class EnvironmentSimulationApp : ViewBase
 {

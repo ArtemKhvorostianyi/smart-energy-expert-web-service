@@ -5,7 +5,8 @@ namespace SmartEnergyExpert.Client.Apps;
 [App(
     icon: Icons.Database,
     title: "Керування датасетами",
-    group: ["Датасети"],
+    group: ["Сервіс"],
+    order: 10,
     searchHints: ["датасети", "csv", "імпорт", "видалення", "зразки", "datasets"])]
 public sealed class DatasetsManagementApp : ViewBase
 {
