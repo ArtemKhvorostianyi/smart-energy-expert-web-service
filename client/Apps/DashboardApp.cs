@@ -21,9 +21,9 @@ public sealed class DashboardApp : ViewBase
                | new Separator()
                | Text.H3("Workflow")
                | Text.Block("1. Ensure API and PostgreSQL run on localhost.")
-               | Text.Block("2. Open Datasets management to create datasets, paste or upload CSV samples, or delete obsolete ones.")
+               | Text.Block("2. Open Datasets management for CSV/import and cleanup, or Environment simulation for a synthetic model dataset.")
                | Text.Block("3. Open Hydroacoustic Comparison.")
                | Text.Block("4. Select simulation and field datasets.")
-               | Text.Block("5. Run comparison and inspect top differences with recommendations.");
+               | Text.Block("5. Run compa=rison and inspect top differences with recommendations.");
     }
 }

@@ -122,6 +122,36 @@ public sealed class CreateDatasetRequestDto
     public string Version { get; init; } = "v1";
 }
 
+public sealed class GenerateSimulationDatasetRequestDto
+{
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = "parameter-simulation";
+
+    [JsonPropertyName("depthMeters")]
+    public decimal DepthMeters { get; init; } = 60;
+
+    [JsonPropertyName("temperatureCelsius")]
+    public decimal TemperatureCelsius { get; init; } = 12;
+
+    [JsonPropertyName("salinityPsu")]
+    public decimal SalinityPsu { get; init; } = 35;
+
+    [JsonPropertyName("noiseLevelDb")]
+    public decimal NoiseLevelDb { get; init; } = -92;
+
+    [JsonPropertyName("bottomType")]
+    public string BottomType { get; init; } = "sand";
+
+    [JsonPropertyName("durationMinutes")]
+    public int DurationMinutes { get; init; } = 60;
+
+    [JsonPropertyName("frequencyBandsHz")]
+    public decimal[]? FrequencyBandsHz { get; init; }
+
+    [JsonPropertyName("modelVersion")]
+    public string? ModelVersion { get; init; }
+}
+
 public sealed class DifferencePointDto
 {
     [JsonPropertyName("timestamp")]

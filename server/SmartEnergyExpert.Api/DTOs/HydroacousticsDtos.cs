@@ -41,6 +41,21 @@ public sealed class CreateDatasetRequest
     public string Version { get; init; } = "v1";
 }
 
+public sealed class GenerateSimulationDatasetRequest
+{
+    public string Name { get; init; } = "parameter-simulation";
+    public decimal DepthMeters { get; init; } = 60;
+    public decimal TemperatureCelsius { get; init; } = 12;
+    public decimal SalinityPsu { get; init; } = 35;
+    /// <summary>Environmental noise floor (negative dB re 1µPa illustrative scale).</summary>
+    public decimal NoiseLevelDb { get; init; } = -92;
+    /// <summary>For example sand, mud, silt, hard_rock.</summary>
+    public string BottomType { get; init; } = "sand";
+    public int DurationMinutes { get; init; } = 60;
+    public decimal[]? FrequencyBandsHz { get; init; }
+    public string? ModelVersion { get; init; }
+}
+
 public sealed class AddAcousticSampleRequest
 {
     public DateTimeOffset Timestamp { get; init; }
