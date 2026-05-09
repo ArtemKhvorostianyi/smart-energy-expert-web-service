@@ -1,6 +1,9 @@
 using Ivy;
+using QuestPDF.Infrastructure;
 using SmartEnergyExpert.Client.Apps;
 using SmartEnergyExpert.Client.Services;
+
+QuestPDF.Settings.License = LicenseType.Community;
 
 var server = new Server();
 server.UseCulture("uk-UA");
