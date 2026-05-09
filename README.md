@@ -67,6 +67,8 @@ API слухає **8080** (`ASPNETCORE_URLS` у Dockerfile).
 
    **Postgres:** у змінній `ConnectionStrings__DefaultConnection` поле **`Host` не може бути `localhost`** всередині контейнера API — це сам контейнер, не база. Використай **хост Postgres у Sliplane** (внутрішній hostname сервісу БД, наприклад з екрана того ж проєкту/мережі). Приклад: `Host=імя-сервісу-postgres;Port=5432;Database=hydroacoustic_expert;Username=…;Password=…`.
 
+   Якщо в логах досі **`tcp://localhost:5432`** — змінна **не потрапляє в контейнер API**: перевір ім’я (**два** підкреслення: `ConnectionStrings__DefaultConnection`), що вона в **сервісі web API**, а не лише в Postgres, і зроби redeploy. У Production без цієї змінної застосунок падає на старті з явним повідомленням (після оновлення коду з репо).
+
 5. Після старту перевір у браузері `https://<твій-api-хост>/` (або health, якщо додаси endpoint). Логін клієнта — той самий Basic/JWT, що й у сидів API (див. `DatabaseInitializer` / локальний пароль).
 
 ### 4. Локальний Ivy → прод API

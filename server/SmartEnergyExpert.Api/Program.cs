@@ -10,10 +10,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
+var npgsqlConnectionString = ResolveNpgsqlConnectionString(builder);
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(
-        builder.Configuration.GetConnectionString("DefaultConnection")
-        ?? "Host=localhost;Port=5432;Database=hydroacoustic_expert;Username=postgres;Password=postgres"));
+    options.UseNpgsql(npgsqlConnectionString));
 
 var jwtKey = builder.Configuration["Jwt:Key"] ?? "dev-only-super-secret-key-change-this";
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "SmartEnergyExpert.Api";
@@ -60,3 +59,21 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+static string ResolveNpgsqlConnectionString(WebApplicationBuilder builder)
+{
+    var conn = builder.Configuration.GetConnectionString("DefaultConnection");
+    if (!string.IsNullOrWhiteSpace(conn))
+    {
+        return conn;
+    }
+
+    if (builder.Environment.IsProduction())
+    {
+        throw new InvalidOperationException(
+            "У Production потрібен PostgreSQL. Задай змінну середовища ConnectionStrings__DefaultConnection "
+            + "(повний рядок Npgsql). У Docker Host не може бути localhost — використай hostname сервісу Postgres у Sliplane.");
+    }
+
+    return "Host=localhost;Port=5432;Database=hydroacoustic_expert;Username=postgres;Password=postgres";
+}
