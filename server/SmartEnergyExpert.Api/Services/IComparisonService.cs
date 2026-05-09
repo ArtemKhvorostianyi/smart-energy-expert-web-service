@@ -22,6 +22,11 @@ public sealed class ComparisonComputationResult
 
 public sealed class ComparisonVisualizationComputation
 {
+    /// <summary>
+    /// True when pairs used **experiment-progress** alignment (0→1 normalized time independently per dataset) after exact UTC and UTC-window nearest failed — works without shared wall-clock epochs.
+    /// </summary>
+    public bool TimelineNormalizationApplied { get; init; }
+
     public decimal DominantVisualizationFrequencyBand { get; init; }
     public IReadOnlyList<OverlaySeriesComputationPoint> OverlaySeries { get; init; } = [];
     public IReadOnlyList<HeatmapComputationCell> HeatmapCells { get; init; } = [];

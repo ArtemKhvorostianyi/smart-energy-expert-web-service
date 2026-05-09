@@ -21,6 +21,8 @@ public interface IApiClient
         CancellationToken cancellationToken = default);
     Task DeleteDatasetAsync(Guid datasetId, CancellationToken cancellationToken = default);
     Task<int> ImportCsvSamplesAsync(Guid datasetId, string csvContent, CancellationToken cancellationToken = default);
+    /// <summary>POST import-csv-file with multipart body (preferred for larger CSV).</summary>
+    Task<int> ImportCsvFileMultipartAsync(Guid datasetId, byte[] utf8Csv, string fileName, CancellationToken cancellationToken = default);
     Task<int> ImportCsvFileAsync(Guid datasetId, string filePath, CancellationToken cancellationToken = default);
     Task<ComparisonResultDto> RunComparisonAsync(CreateComparisonRequestDto request, CancellationToken cancellationToken = default);
 }
@@ -40,7 +42,7 @@ public sealed class ApiClient : IApiClient
         var baseUrl = configuration["BackendApi:BaseUrl"] ?? "http://localhost:5109/";
         _backendEmail = configuration["BackendApi:Email"] ?? "admin@smartenergy.local";
         _backendPassword = configuration["BackendApi:Password"] ?? "Admin123!";
-        _httpClient = new HttpClient { BaseAddress = new Uri(baseUrl) };
+        _httpClient = new HttpClient { BaseAddress = new Uri(baseUrl), Timeout = TimeSpan.FromMinutes(30) };
     }
 
     public async Task<IReadOnlyList<DatasetDto>> GetDatasetsAsync(CancellationToken cancellationToken = default)
@@ -102,12 +104,42 @@ public sealed class ApiClient : IApiClient
     public async Task<int> ImportCsvSamplesAsync(Guid datasetId, string csvContent, CancellationToken cancellationToken = default)
     {
         await EnsureBackendAuthorizedAsync(cancellationToken);
-        using var content = new StringContent(csvContent, Encoding.UTF8, "text/plain");
-        var response = await _httpClient.PostAsync($"api/datasets/{datasetId}/samples/import-csv", content, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        using var plain = new StringContent(csvContent, Encoding.UTF8, "text/plain");
+        var response = await _httpClient.PostAsync($"api/datasets/{datasetId}/samples/import-csv", plain, cancellationToken);
+        await ThrowIfImportFailed(response, cancellationToken);
         var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, int>>(JsonOptions, cancellationToken);
         return payload is not null && payload.TryGetValue("imported", out var imported) ? imported : 0;
     }
+
+    public async Task<int> ImportCsvFileMultipartAsync(Guid datasetId, byte[] utf8Csv, string fileName, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(utf8Csv);
+        await EnsureBackendAuthorizedAsync(cancellationToken);
+        using var content = new MultipartFormDataContent();
+        using var fileContent = new ByteArrayContent(utf8Csv);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/csv");
+        var safeName = string.IsNullOrWhiteSpace(fileName) ? "import.csv" : Path.GetFileName(fileName.Trim());
+        content.Add(fileContent, "file", safeName);
+        var response = await _httpClient.PostAsync($"api/datasets/{datasetId}/samples/import-csv-file", content, cancellationToken);
+        await ThrowIfImportFailed(response, cancellationToken);
+        var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, int>>(JsonOptions, cancellationToken);
+        return payload is not null && payload.TryGetValue("imported", out var imported) ? imported : 0;
+    }
+
+    private static async Task ThrowIfImportFailed(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        if (response.IsSuccessStatusCode)
+        {
+            return;
+        }
+
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        throw new InvalidOperationException(
+            $"Import HTTP {(int)response.StatusCode} {response.ReasonPhrase}. {TruncateForMessage(body)}");
+    }
+
+    private static string TruncateForMessage(string s, int max = 480) =>
+        s.Length <= max ? s : s[..max] + "…";
 
     public async Task<int> ImportCsvFileAsync(Guid datasetId, string filePath, CancellationToken cancellationToken = default)
     {
@@ -124,7 +156,7 @@ public sealed class ApiClient : IApiClient
         content.Add(fileContent, "file", Path.GetFileName(filePath.Trim()));
 
         var response = await _httpClient.PostAsync($"api/datasets/{datasetId}/samples/import-csv-file", content, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await ThrowIfImportFailed(response, cancellationToken);
         var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, int>>(JsonOptions, cancellationToken);
         return payload is not null && payload.TryGetValue("imported", out var imported) ? imported : 0;
     }

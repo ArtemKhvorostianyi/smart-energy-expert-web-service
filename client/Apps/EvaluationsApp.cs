@@ -53,8 +53,8 @@ public sealed class EvaluationsApp : ViewBase
                     return await apiClient.GetDatasetSignalOverviewAsync(id, ct);
                 });
             var datasets = datasetsQuery.Value ?? [];
-            var simOptions = datasets.Where(x => x.Type == "simulation").Select(ToOption).ToArray();
-            var fieldOptions = datasets.Where(x => x.Type == "field").Select(ToOption).ToArray();
+            var simOptions = datasets.Where(x => IsSimulationType(x.Type)).Select(ToOption).ToArray();
+            var fieldOptions = datasets.Where(x => IsFieldType(x.Type)).Select(ToOption).ToArray();
             var canRun = !datasetsQuery.Loading
                          && simOptions.Length > 0
                          && fieldOptions.Length > 0
@@ -79,12 +79,28 @@ public sealed class EvaluationsApp : ViewBase
                        | Text.H2("Hydroacoustic Comparison")
                        | BuildPresetCard(presetName, selectedPreset, presets, selectedSimulation, selectedField, topN, datasets, status)
                        | new Card(
-                           Layout.Vertical()
-                           | Text.H3("Selection")
-                           | (datasetsQuery.Loading ? Skeleton.Card() : selectedSimulation.ToSelectInput(simOptions))
-                           | Text.Muted("Simulation dataset: the modeled hydroacoustic signal output.")
-                           | (datasetsQuery.Loading ? Skeleton.Card() : selectedField.ToSelectInput(fieldOptions))
-                           | Text.Muted("Field dataset: the measured signal from the real experiment."))
+                           Layout.Vertical().Gap(1)
+                           | (Layout.Horizontal().Gap(2)
+                               | Text.H3("Selection")
+                               | new Button("Refresh dataset list")
+                                   .Disabled(datasetsQuery.Loading)
+                                   .OnClick(() => refreshTick.Set(refreshTick.Value + 1)))
+                           | Text.Muted("After importing CSV or generating a simulation elsewhere, tap refresh so new datasets appear.")
+                           | (datasetsQuery.Loading
+                               ? Skeleton.Card()
+                               : simOptions.Length == 0
+                                   ? Callout.Warning(
+                                       "No simulation datasets loaded. Create one via Environment simulation (type simulation), then refresh.")
+                                   : selectedSimulation.ToSelectInput(simOptions))
+                           | Text.Muted("Simulation — only type simulation (model branch). Not for ARLUT CSV; use Field below.")
+                           | (datasetsQuery.Loading
+                               ? Skeleton.Card()
+                               : fieldOptions.Length == 0
+                                   ? Callout.Warning(
+                                       "No field datasets loaded. Create type field in Datasets management, import CSV, then refresh.")
+                                   : selectedField.ToSelectInput(fieldOptions))
+                           | Text.Muted(
+                               "Field — measurements. data/ARLUT_01_partA_01_dataset_field_stride2500.csv is loaded at API startup as dataset name: ARLUT 01 part A field stride2500 (if missing)."))
                        | BuildSignalExplorerCard(simulationExplorerQuery, fieldExplorerQuery)
                        | new Card(
                            Layout.Vertical()
@@ -130,7 +146,52 @@ public sealed class EvaluationsApp : ViewBase
                 | Text.Muted("Flow: Dataset → inspect summaries here → interpret structure → Run comparison.")
                 | (Layout.Horizontal().Gap(4)
                     | BuildExplorerHalfPanel("Simulation (model)", simulationExplorerQuery)
-                    | BuildExplorerHalfPanel("Field (measurement)", fieldExplorerQuery)));
+                    | BuildExplorerHalfPanel("Field (measurement)", fieldExplorerQuery))
+                | BuildCrossDatasetResolutionHint(simulationExplorerQuery, fieldExplorerQuery));
+        }
+
+        private static object BuildCrossDatasetResolutionHint(
+            QueryResult<ClientServices.DatasetSignalOverviewDto?> simulationExplorerQuery,
+            QueryResult<ClientServices.DatasetSignalOverviewDto?> fieldExplorerQuery)
+        {
+            if (simulationExplorerQuery.Loading
+                || fieldExplorerQuery.Loading
+                || simulationExplorerQuery.Error is not null
+                || fieldExplorerQuery.Error is not null)
+            {
+                return new Fragment();
+            }
+
+            var sim = simulationExplorerQuery.Value;
+            var field = fieldExplorerQuery.Value;
+            if (sim is null || field is null || sim.SampleCount == 0 || field.SampleCount == 0)
+            {
+                return new Fragment();
+            }
+
+            var nSim = sim.SampleCount;
+            var nField = field.SampleCount;
+            var minN = Math.Max(Math.Min(nSim, nField), 1);
+            var countSkew = Math.Max(nSim, nField) / minN;
+            var ratioFieldPerSim = (decimal)nField / Math.Max(nSim, 1);
+
+            if (countSkew >= 10m)
+            {
+                return Callout.Warning(
+                    $"Very different sample counts ({nSim} simulation vs {nField} field, about {countSkew:F0}×). "
+                    + "That almost always means two different CSVs or experiments — the engine falls back on experiment-progress pairing (normalized time), "
+                    + "not identical rows. "
+                    + "For aligned rows and sane metrics: in Environment simulation choose Mirror → the SAME field dataset you compare here, "
+                    + "generate a new simulation, then select both tied to that recording.");
+            }
+
+            var pairingNote = ratioFieldPerSim >= 8m
+                ? "Field is much denser (≥8×): one field observation per simulation row where alignable; if field density is extreme, ordered field subsampling by time quantiles is used."
+                : "Fewer counts on one branch: pairing picks one counterpart per simulation sample (see comparison docs). ";
+
+            return Callout.Info(
+                $"Resolution check: simulation {nSim} vs field {nField} samples (field/sim ≈ {ratioFieldPerSim:F2}). "
+                + pairingNote);
         }
 
         private static object BuildExplorerHalfPanel(string role, QueryResult<ClientServices.DatasetSignalOverviewDto?> query)
@@ -162,7 +223,7 @@ public sealed class EvaluationsApp : ViewBase
                 return Layout.Vertical().Gap(1).Width(Size.Fraction(0.48f))
                        | Text.H4(role)
                        | Text.Block($"{o.Name} ({o.SourceSystem}) — no acoustic samples imported yet.")
-                       | Text.Muted("Use Datasets management to import CSV samples and refresh this view.");
+                       | Text.Muted("Use Datasets management to upload a CSV (FileInput) and refresh this view.");
             }
 
             var durationText = o.DurationSeconds <= 0.0001m && o.SampleCount > 1
@@ -262,18 +323,32 @@ public sealed class EvaluationsApp : ViewBase
                    | new Card(
                        Layout.Vertical()
                        | Text.H3("Quick Summary")
-                       | Text.Block(result.SignificantDifferenceCount == 0
-                           ? "Model matches field data well for this run."
-                           : "Model needs tuning for part of the compared points."))
+                       | Text.Block(result.TotalComparedPoints == 0
+                           ? "No paired samples after band scaling (10^n Hz), UTC nearest-match, and experiment-progress pairing (matching normalized elapsed share u per dataset). Check alignable bands and non-empty spans; see recommendations."
+                           : result.SignificantDifferenceCount == 0
+                               ? "Model matches field data well for this run (on paired points only)."
+                               : "Model needs tuning for part of the compared points.")
+                       | (result.TotalComparedPoints > 0 && result.TimelineNormalizationApplied
+                           ? Text.Muted(
+                               "Pairs used automatic experiment-progress alignment: each CSV’s timestamps were mapped to u∈[0,1] by its own first/last sample, then aligned by closest u across alignable bands (no shared UTC required). Prefer identical UTC/elapsed-second baselines when you need strict traceability.")
+                           : Layout.Horizontal()))
                    | new Card(
                        Layout.Vertical()
                        | Text.H3("Metrics")
-                       | Text.Block($"MAE: {result.Mae:F3}")
-                       | Text.Block($"RMSE: {result.Rmse:F3}")
-                       | Text.Block($"MRE: {result.MeanRelativeErrorPercent:F2}%")
-                       | Text.Block($"P95: {result.P95AbsoluteError:F3}")
-                       | Text.Block($"Significant points: {result.SignificantDifferenceCount}/{result.TotalComparedPoints}")
-                       | Text.Muted("Severity buckets use relative amplitude error (%): LOW < 2%; MODERATE 2–5%; HIGH 5–10%; CRITICAL > 10%."))
+                       | (result.TotalComparedPoints == 0
+                           ? Layout.Vertical().Gap(1)
+                             | Callout.Warning(
+                                 "Compared points: 0 — tries exact row, then band-scaled UTC nearest (skew cap), then experiment-progress pairing (min |u_sim−u_field|). MAE / RMSE / MRE / P95 are omitted until at least one pair exists.")
+                             | Text.Muted(
+                                 "When datasets align, LOW < 2%; MODERATE 2–5%; HIGH 5–10%; CRITICAL > 10% relative amplitude error.")
+                           : Layout.Vertical().Gap(1)
+                             | Text.Block($"MAE: {result.Mae:F3}")
+                             | Text.Block($"RMSE: {result.Rmse:F3}")
+                             | Text.Block($"MRE: {result.MeanRelativeErrorPercent:F2}%")
+                             | Text.Block($"P95: {result.P95AbsoluteError:F3}")
+                             | Text.Block($"Significant points: {result.SignificantDifferenceCount}/{result.TotalComparedPoints}")
+                             | Text.Muted(
+                                 "Severity buckets use relative amplitude error (%): LOW < 2%; MODERATE 2–5%; HIGH 5–10%; CRITICAL > 10%.")))
                    | new Card(
                        Layout.Vertical()
                        | Text.H3("Temporal clusters (Top mismatches)")
@@ -320,6 +395,7 @@ public sealed class EvaluationsApp : ViewBase
             "NOISE_INTERFERENCE" => "Broadband noise / episodic masking",
             "FREQUENCY_ATTENUATION" => "Band-limited coupling / attenuation tilt",
             "ACCEPTABLE_MODEL" => "Acceptable agreement",
+            "DATA_ALIGNMENT" => "Data alignment / pairing",
             _ => category
         };
     }
@@ -373,6 +449,10 @@ public sealed class EvaluationsApp : ViewBase
 
             return Layout.Vertical().Gap(2)
                    | Text.H3("Charts")
+                   | (result.TotalComparedPoints == 0
+                       ? Callout.Warning(
+                           "No paired samples — charts below are empty or all-zero and do not indicate model quality.")
+                       : new Fragment())
                    | new Card(
                        Layout.Vertical()
                        | Text.Block("Metric comparison")
@@ -420,6 +500,12 @@ public sealed class EvaluationsApp : ViewBase
                        | Text.Muted("Share of LOW/MODERATE/HIGH/CRITICAL among the surfaced Top-N list."));
         }
     }
+
+    private static bool IsSimulationType(string type) =>
+        string.Equals(type, "simulation", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsFieldType(string type) =>
+        string.Equals(type, "field", StringComparison.OrdinalIgnoreCase);
 
     private static string ToOption(ClientServices.DatasetDto dataset) =>
         $"{dataset.Name} | {dataset.SourceSystem} | {dataset.SampleCount} samples [{dataset.Id}]";

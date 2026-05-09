@@ -75,6 +75,12 @@ public sealed class GenerateSimulationDatasetRequest
     public int DurationMinutes { get; init; } = 60;
     public decimal[]? FrequencyBandsHz { get; init; }
     public string? ModelVersion { get; init; }
+
+    /// <summary>
+    /// When set, builds one synthetic row per field sample (same timestamps and bands).
+    /// DurationMinutes / FrequencyBandsHz are ignored; SPL comes from env parameters.
+    /// </summary>
+    public Guid? AlignToFieldDatasetId { get; init; }
 }
 
 public sealed class AddAcousticSampleRequest
@@ -147,6 +153,11 @@ public sealed class DifferenceClusterResponse
 
 public sealed class ComparisonResultResponse
 {
+    /// <summary>
+    /// When true, pairing used normalized experiment progress (elapsed fraction inside each CSV span); wall-clock epochs need not coincide.
+    /// </summary>
+    public bool TimelineNormalizationApplied { get; init; }
+
     public Guid ComparisonRunId { get; init; }
     public decimal Mae { get; init; }
     public decimal Rmse { get; init; }

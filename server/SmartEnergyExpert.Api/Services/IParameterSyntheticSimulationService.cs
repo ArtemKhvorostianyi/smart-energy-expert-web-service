@@ -10,4 +10,11 @@ public interface IParameterSyntheticSimulationService
         AppDbContext dbContext,
         GenerateSimulationDatasetRequest request,
         CancellationToken cancellationToken);
+
+    /// <summary>RNG-shaped heuristic SPL (same as environment generator) at a surrogate “minute” index.</summary>
+    decimal EstimateAmplitudeDb(
+        decimal frequencyBandHz,
+        int surrogateMinuteIndex,
+        GenerateSimulationDatasetRequest envelope,
+        Random rng);
 }

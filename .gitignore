@@ -9,6 +9,8 @@ logs/
 .env
 .env.*
 
+.venv-arlut/
+
 # Node / React
 node_modules/
 dist/

@@ -12,6 +12,37 @@ public sealed class EnvironmentSimulationApp : ViewBase
 {
     private const int SamplePageSize = 150;
 
+    private static string FieldAlignIndependentOption() =>
+        $"— Independent grid (duration & bands below) — [{Guid.Empty}]";
+
+    private static string ToFieldMirrorOption(ClientServices.DatasetDto dataset) =>
+        $"{dataset.Name} | {dataset.SourceSystem} | {dataset.SampleCount} samples [{dataset.Id}]";
+
+    private static Guid TryParseMirroredFieldId(string value)
+    {
+        try
+        {
+            var id = ParseDatasetBracketId(value);
+            return id == Guid.Empty ? Guid.Empty : id;
+        }
+        catch
+        {
+            return Guid.Empty;
+        }
+    }
+
+    private static Guid ParseDatasetBracketId(string value)
+    {
+        var openIndex = value.LastIndexOf('[');
+        var closeIndex = value.LastIndexOf(']');
+        if (openIndex < 0 || closeIndex <= openIndex)
+        {
+            throw new InvalidOperationException("Invalid dataset value.");
+        }
+
+        return Guid.Parse(value.Substring(openIndex + 1, closeIndex - openIndex - 1));
+    }
+
     private static readonly string[] SimulationBottomTypes =
         ["sand", "mud", "silt", "clay_mud", "hard_rock", "rock", "granite"];
 
@@ -34,12 +65,16 @@ public sealed class EnvironmentSimulationApp : ViewBase
         var samplesOffset = UseState(0);
 
         var simName = UseState("parameter-simulation");
+        var alignFieldSelection = UseState(FieldAlignIndependentOption());
         var depthM = UseState(60m);
         var temperatureC = UseState(12m);
         var salinityPsu = UseState(35m);
         var noiseLevelDb = UseState(-92m);
         var bottomType = UseState("sand");
         var durationMin = UseState(60m);
+
+        var datasetsQuery =
+            UseQuery(key: $"{nameof(EnvironmentSimulationApp)}:datasets", fetcher: api.GetDatasetsAsync);
 
         var samplesPageQuery = UseQuery(
             key: ("env-sim-samples", previewSamplesDatasetId.Value, samplesOffset.Value),
@@ -57,6 +92,22 @@ public sealed class EnvironmentSimulationApp : ViewBase
                     ct);
             });
 
+        var alignOptions = ImmutableArray.CreateBuilder<string>();
+        alignOptions.Add(FieldAlignIndependentOption());
+        if (datasetsQuery.Value is { } datasets)
+        {
+            foreach (var ds in datasets
+                         .Where(x => string.Equals(x.Type, "field", StringComparison.OrdinalIgnoreCase))
+                         .OrderBy(x => x.Name))
+            {
+                alignOptions.Add(ToFieldMirrorOption(ds));
+            }
+        }
+
+        var alignOptionsArray = alignOptions.ToImmutable();
+        var mirrorsFieldDataset =
+            TryParseMirroredFieldId(alignFieldSelection.Value) != Guid.Empty;
+
         object simulationTablePanel = generatedSimulationRows.Value.IsEmpty
             ? Text.Muted("No datasets yet — generate one above.")
             : BuildSessionSimulationsTable(generatedSimulationRows.Value);
@@ -69,13 +120,21 @@ public sealed class EnvironmentSimulationApp : ViewBase
         return Layout.Vertical().Gap(2)
                | Text.H2("Environment-based simulation")
                | Text.P(
-                   "Set water column and seabed assumptions; the service builds a heuristic synthetic SPL time series "
-                   + "(type simulation, source parameter-synthetic). Use it as the model branch in Hydroacoustic Comparison.")
+                   "Define water-column and seabed assumptions; the service writes a heuristic synthetic SPL series "
+                   + "(dataset type simulation). After you import measurements (including long ARLUT CSVs) as a field dataset "
+                   + "below, optionally mirror its timestamps and bands so Hydroacoustic Comparison lines up matching UTC × frequency rows.")
 
                | new Card(
                    Layout.Vertical().Gap(1)
                    | Text.H3("Environment")
                    | simName.ToTextInput().Placeholder("Simulation name stem (unique suffix added if needed)")
+                   | Text.Muted("Mirror timestamps & bands from imported field dataset (optional)")
+                   | alignFieldSelection.ToSelectInput(alignOptionsArray.ToArray())
+                   | (mirrorsFieldDataset
+                       ? Text.Muted(
+                           "Synthetic output has one sample per acoustic row in that field dataset; duration and frequency band list "
+                           + "below are ignored. SPL is replaced by the heuristic; geometry columns follow the measurements.")
+                       : new Fragment())
                    | Text.Muted("Depth (m)")
                    | depthM.ToNumberInput(min: 1, max: 12_000)
                    | Text.Muted("Temperature (°C)")
@@ -86,13 +145,16 @@ public sealed class EnvironmentSimulationApp : ViewBase
                    | noiseLevelDb.ToNumberInput(min: -120, max: -20)
                    | Text.Muted("Bottom type")
                    | bottomType.ToSelectInput(SimulationBottomTypes)
-                   | Text.Muted("Duration (minutes)")
+                   | Text.Muted(
+                       mirrorsFieldDataset ? "Duration (minutes) — not used while mirroring" : "Duration (minutes)")
                    | durationMin.ToNumberInput(min: 1, max: 240)
                    | new Button("Generate simulation dataset").Primary().Disabled(busy.Value).OnClick(async () =>
                    {
                        busy.Set(true);
                        try
                        {
+                           var parsedMirror = TryParseMirroredFieldId(alignFieldSelection.Value);
+                           Guid? alignId = parsedMirror == Guid.Empty ? null : parsedMirror;
                            var dto = new ClientServices.GenerateSimulationDatasetRequestDto
                            {
                                Name = string.IsNullOrWhiteSpace(simName.Value)
@@ -103,7 +165,8 @@ public sealed class EnvironmentSimulationApp : ViewBase
                                SalinityPsu = decimal.Clamp(salinityPsu.Value, 0, 45),
                                NoiseLevelDb = decimal.Clamp(noiseLevelDb.Value, -120, -20),
                                BottomType = string.IsNullOrWhiteSpace(bottomType.Value) ? "sand" : bottomType.Value.Trim(),
-                               DurationMinutes = (int)decimal.Round(decimal.Clamp(durationMin.Value, 1, 240))
+                               DurationMinutes = (int)decimal.Round(decimal.Clamp(durationMin.Value, 1, 240)),
+                               AlignToFieldDatasetId = alignId
                            };
                            var ds = await api.GenerateSimulationDatasetAsync(dto);
                            generatedSimulationRows.Set(generatedSimulationRows.Value.Add(new SimulatedDatasetGridRow(

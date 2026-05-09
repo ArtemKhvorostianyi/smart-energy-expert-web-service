@@ -195,6 +195,10 @@ public sealed class GenerateSimulationDatasetRequestDto
 
     [JsonPropertyName("modelVersion")]
     public string? ModelVersion { get; init; }
+
+    /// <summary>POST api/simulations/environment — mirrors every row of this field dataset (timestamps/bands/context).</summary>
+    [JsonPropertyName("alignToFieldDatasetId")]
+    public Guid? AlignToFieldDatasetId { get; init; }
 }
 
 public sealed class DifferencePointDto
@@ -301,6 +305,10 @@ public sealed class DifferenceClusterDto
 
 public sealed class ComparisonResultDto
 {
+    /// <summary>Set when pairing used normalized experiment-progress (u in [0,1] per dataset) after exact UTC failed.</summary>
+    [JsonPropertyName("timelineNormalizationApplied")]
+    public bool TimelineNormalizationApplied { get; init; }
+
     [JsonPropertyName("comparisonRunId")]
     public Guid ComparisonRunId { get; init; }
 

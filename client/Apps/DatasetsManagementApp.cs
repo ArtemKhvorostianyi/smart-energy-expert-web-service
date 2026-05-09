@@ -23,26 +23,30 @@ public sealed class DatasetsManagementApp : ViewBase
         var newVersion = UseState("v1");
 
         var selectedDatasetOption = UseState("");
-        var csvPaste = UseState("");
-        var serverCsvPath = UseState("");
+        var csvFileUpload = UseState<FileUpload<byte[]>?>();
 
         var busyCreate = UseState(false);
-        var busyImportPaste = UseState(false);
-        var busyImportPath = UseState(false);
+        var busyImportFile = UseState(false);
         var busyDelete = UseState(false);
 
         var datasetsQuery = UseQuery(
             key: (nameof(DatasetsManagementApp), refreshTick.Value),
             fetcher: async ct => await api.GetDatasetsAsync(ct));
 
+        var csvUploadCore = UseUpload(MemoryStreamUploadHandler.Create(csvFileUpload));
+        var csvUpload = csvUploadCore
+            .Accept("text/csv,.csv,text/plain")
+            .MaxFileSize(FileSize.FromMegabytes(128));
+
         var datasets = datasetsQuery.Value ?? [];
         var datasetOptions = datasets.Select(ToOption).ToArray();
         var canPickDataset = datasetOptions.Length > 0;
+        var csvBytesReady = csvFileUpload.Value?.Content is byte[] csvBuf && csvBuf.Length > 0;
 
         return Layout.Vertical().Gap(2)
                | Text.H2("Datasets management")
                | Text.P(
-                   "Create empty datasets, import hydroacoustic samples from CSV (paste or server file path when the Ivy host can read files), "
+                   "Create empty datasets, import hydroacoustic samples from a CSV file via the picker below, "
                    + "and remove datasets together with comparisons that referenced them.")
 
                | (datasetsQuery.Error is { } err ? Callout.Warning(err.Message) : new Fragment())
@@ -92,37 +96,49 @@ public sealed class DatasetsManagementApp : ViewBase
 
                | new Card(
                    Layout.Vertical().Gap(1)
-                   | Text.H3("Import CSV samples")
-                   | Text.Muted(
-                       "Select a dataset below. Rows: timestamp, frequency_band, amplitude_db, depth_meters, range_meters, sound_speed?, noise_level_db? "
-                       + "(header row starting with timestamp is skipped).")
-                   | (canPickDataset ? selectedDatasetOption.ToSelectInput(datasetOptions) : Text.Muted("No datasets yet — create one first."))
-                   | csvPaste.ToCodeInput().Placeholder("Paste full CSV contents here.")
-                   | new Button("Import from pasted CSV")
-                       .Disabled(!canPickDataset || busyImportPaste.Value)
+                   | Text.H3("Target dataset for import / delete")
+                   | Text.Muted("Which dataset receives the CSV.")
+                   | (canPickDataset
+                       ? selectedDatasetOption.ToSelectInput(datasetOptions)
+                       : Text.Muted("No datasets yet — create one first.")))
+
+               | new Card(
+                   Layout.Vertical().Gap(1)
+                   | Text.Muted("UTF-8 CSV: timestamp plus six numeric columns (same header as data/arlut_field.csv).")
+                   | csvFileUpload
+                       .ToFileInput(csvUpload)
+                       .Variant(FileInputVariant.Default)
+                       .Placeholder("Choose .csv …")
+                   | new Button("Import")
+                       .Disabled(!canPickDataset || busyImportFile.Value || !csvBytesReady)
+                       .Primary()
                        .OnClick(async () =>
                        {
                            var id = TryParseDatasetId(selectedDatasetOption.Value);
                            if (id == Guid.Empty)
                            {
-                               status.Set("Select a dataset.");
+                               status.Set("Pick a dataset in Target dataset above.");
                                return;
                            }
 
-                           if (string.IsNullOrWhiteSpace(csvPaste.Value))
+                           if (csvFileUpload.Value?.Content is not byte[] bytes || bytes.Length == 0)
                            {
-                               status.Set("Paste CSV content first.");
+                               status.Set("Choose a CSV file first.");
                                return;
                            }
 
-                           busyImportPaste.Set(true);
+                           busyImportFile.Set(true);
                            try
                            {
-                               var n = await api.ImportCsvSamplesAsync(id, csvPaste.Value.Trim());
+                               var uf = csvFileUpload.Value!;
+                               var payload = StripUtf8Bom(bytes);
+                               var n = await api.ImportCsvFileMultipartAsync(id, payload, uf.FileName ?? "import.csv");
                                refreshTick.Set(refreshTick.Value + 1);
+                               csvFileUpload.Set(null);
+
                                status.Set(n == 0
                                    ? "Import finished — 0 rows accepted (check column format)."
-                                   : $"Imported {n} sample row(s).");
+                                   : $"Imported {n} row(s).");
                            }
                            catch (Exception ex)
                            {
@@ -130,56 +146,20 @@ public sealed class DatasetsManagementApp : ViewBase
                            }
                            finally
                            {
-                               busyImportPaste.Set(false);
+                               busyImportFile.Set(false);
                            }
-                       })
-                   | Text.Muted("If the Ivy process runs locally, you may import straight from disk on the machine hosting the web client:")
-                   | serverCsvPath.ToTextInput().Placeholder("/absolute/path/to/samples.csv")
-                   | new Button("Import from server file path").Disabled(!canPickDataset || busyImportPath.Value).OnClick(async () =>
-                   {
-                       var id = TryParseDatasetId(selectedDatasetOption.Value);
-                       if (id == Guid.Empty)
-                       {
-                           status.Set("Select a dataset.");
-                           return;
-                       }
-
-                       if (string.IsNullOrWhiteSpace(serverCsvPath.Value))
-                       {
-                           status.Set("Enter a path to the CSV file on the Ivy host.");
-                           return;
-                       }
-
-                       busyImportPath.Set(true);
-                       try
-                       {
-                           var n = await api.ImportCsvFileAsync(id, serverCsvPath.Value.Trim());
-                           refreshTick.Set(refreshTick.Value + 1);
-                           status.Set(n == 0
-                               ? "Import finished — 0 rows accepted (check path / format)."
-                               : $"Imported {n} sample row(s) from file.");
-                       }
-                       catch (Exception ex)
-                       {
-                           status.Set($"CSV file import failed: {ex.Message}");
-                       }
-                       finally
-                       {
-                           busyImportPath.Set(false);
-                       }
-                   }))
+                       }))
 
                | new Card(
                    Layout.Vertical().Gap(1)
                    | Text.H3("Delete dataset")
-                   | Text.Muted("Removes the dataset, all acoustic samples, and any comparison runs that used this dataset.")
-                   | (canPickDataset ? selectedDatasetOption.ToSelectInput(datasetOptions) : Text.Muted("No datasets to delete."))
+                   | Text.Muted("Deletes dataset, samples, and comparisons that referenced it.")
                    | new Button("Delete selected dataset").Disabled(!canPickDataset || busyDelete.Value).OnClick(async () =>
                    {
                        var id = TryParseDatasetId(selectedDatasetOption.Value);
                        if (id == Guid.Empty)
                        {
-                           status.Set("Select a dataset.");
+                           status.Set("Pick a dataset in Target dataset above.");
                            return;
                        }
 
@@ -202,6 +182,18 @@ public sealed class DatasetsManagementApp : ViewBase
                    }))
 
                | (string.IsNullOrWhiteSpace(status.Value) ? new Fragment() : Callout.Info(status.Value));
+    }
+
+    private static byte[] StripUtf8Bom(byte[] raw)
+    {
+        if (raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF)
+        {
+            var copy = new byte[raw.Length - 3];
+            Buffer.BlockCopy(raw, 3, copy, 0, copy.Length);
+            return copy;
+        }
+
+        return raw;
     }
 
     private static string ToOption(ClientServices.DatasetDto dataset) =>

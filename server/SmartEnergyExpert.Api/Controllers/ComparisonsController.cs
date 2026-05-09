@@ -87,6 +87,7 @@ public sealed class ComparisonsController(AppDbContext dbContext, IComparisonSer
     {
         var snapshot = new VisualizationSnapshotDto
         {
+            TimelineNormalizationApplied = visualization.TimelineNormalizationApplied,
             DominantVisualizationFrequencyBand = visualization.DominantVisualizationFrequencyBand,
             OverlaySeries = visualization.OverlaySeries
                 .Select(x => new OverlaySeriesPointResponse
@@ -126,6 +127,7 @@ public sealed class ComparisonsController(AppDbContext dbContext, IComparisonSer
         var viz = TryDeserializeVisualization(run.VisualizationPayloadJson);
         return new ComparisonResultResponse
         {
+            TimelineNormalizationApplied = viz?.TimelineNormalizationApplied ?? false,
             ComparisonRunId = run.Id,
             Mae = run.Mae,
             Rmse = run.Rmse,
@@ -177,6 +179,8 @@ public sealed class ComparisonsController(AppDbContext dbContext, IComparisonSer
 
     private sealed class VisualizationSnapshotDto
     {
+        public bool TimelineNormalizationApplied { get; set; }
+
         public decimal DominantVisualizationFrequencyBand { get; set; }
         public List<OverlaySeriesPointResponse> OverlaySeries { get; set; } = [];
         public List<HeatmapCellResponse> MismatchHeatmap { get; set; } = [];

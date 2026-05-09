@@ -18,11 +18,16 @@ public sealed class ParameterSyntheticSimulationService : IParameterSyntheticSim
         GenerateSimulationDatasetRequest request,
         CancellationToken cancellationToken)
     {
+        if (request.AlignToFieldDatasetId is { } fieldId)
+        {
+            return await GenerateAlignedToFieldDatasetAsync(dbContext, request, fieldId, cancellationToken);
+        }
+
         var nameBase = string.IsNullOrWhiteSpace(request.Name)
             ? $"param-simulation-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}"
             : request.Name.Trim();
 
-        var name = await EnsureUniqueDatasetName(dbContext, nameBase, cancellationToken);
+        var name = await EnsureUniqueDatasetNameAsync(dbContext, nameBase, cancellationToken);
 
         var duration = Math.Clamp(request.DurationMinutes, 1, 240);
         var bands = NormalizeBands(request.FrequencyBandsHz).ToArray();
@@ -36,12 +41,6 @@ public sealed class ParameterSyntheticSimulationService : IParameterSyntheticSim
         var depth = decimal.Clamp(request.DepthMeters, 1m, 12_000m);
         var tempC = decimal.Clamp(request.TemperatureCelsius, -2m, 40m);
         var salinity = decimal.Clamp(request.SalinityPsu, 0m, 45m);
-
-        var bottomLossDb = BottomAttenuationDb(bottom);
-        var depthShelf = DepthSpreadDb(depth);
-        var salHue = SalinitySpreadDb(salinity);
-        var thermalHue = TemperatureSpreadDb(tempC);
-        var noiseRipple = NoiseRippleDb(request.NoiseLevelDb);
 
         var dataset = new Dataset
         {
@@ -60,6 +59,7 @@ public sealed class ParameterSyntheticSimulationService : IParameterSyntheticSim
 
         var samples = new List<AcousticSample>(Math.Max(16, duration * bands.Length));
         var soundSpeed = ApproximateSoundSpeedMps(tempC, salinity, depth);
+        var noiseRippleAmbient = NoiseRippleDb(request.NoiseLevelDb);
 
         for (var minute = 0; minute < duration; minute++)
         {
@@ -68,21 +68,8 @@ public sealed class ParameterSyntheticSimulationService : IParameterSyntheticSim
             {
                 var rangeMeters = 900m + minute * 18m;
 
-                var frequencyLossDb = FrequencySpreadDb(bandHz);
-                var slowDriftDb = SlowTemporalDriftDb(minute);
-
                 var baseLevel =
-                    -68m
-                    - bottomLossDb
-                    - frequencyLossDb
-                    + depthShelf
-                    + thermalHue
-                    + salHue
-                    + slowDriftDb
-                    + Ripple(rng);
-
-                baseLevel -= noiseRipple.JitterAmp * (decimal)rng.NextDouble();
-                baseLevel = decimal.Round(baseLevel, 4);
+                    ComposeHeuristicSplDb(bandHz, minute, depth, bottom, tempC, salinity, rng, noiseRippleAmbient);
 
                 samples.Add(new AcousticSample
                 {
@@ -93,7 +80,7 @@ public sealed class ParameterSyntheticSimulationService : IParameterSyntheticSim
                     DepthMeters = depth + (decimal)(rng.NextDouble() * 1.8 - 0.9),
                     RangeMeters = rangeMeters,
                     SoundSpeed = soundSpeed,
-                    NoiseLevelDb = noiseRipple.AmbientField
+                    NoiseLevelDb = noiseRippleAmbient.AmbientField
                 });
             }
         }
@@ -103,6 +90,233 @@ public sealed class ParameterSyntheticSimulationService : IParameterSyntheticSim
 
         return (dataset, samples.Count);
     }
+
+    private async Task<(Dataset Dataset, int SampleCount)> GenerateAlignedToFieldDatasetAsync(
+        AppDbContext dbContext,
+        GenerateSimulationDatasetRequest request,
+        Guid fieldDatasetId,
+        CancellationToken cancellationToken)
+    {
+        var fieldMeta = await dbContext.Datasets.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == fieldDatasetId, cancellationToken);
+        if (fieldMeta is null)
+        {
+            throw new InvalidOperationException("Align target dataset was not found.");
+        }
+
+        if (!string.Equals(fieldMeta.Type, "field", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Align target dataset must have type \"field\".");
+        }
+
+        var rows = await dbContext.AcousticSamples.AsNoTracking()
+            .Where(x => x.DatasetId == fieldDatasetId)
+            .OrderBy(x => x.Timestamp)
+            .ThenBy(x => x.FrequencyBand)
+            .ThenBy(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+        if (rows.Count == 0)
+        {
+            throw new InvalidOperationException("Align target has no acoustic samples.");
+        }
+
+        var minTs = rows.Min(x => x.Timestamp);
+        var maxTs = rows.Max(x => x.Timestamp);
+        var spanMinutes = Math.Max(1d, (maxTs - minTs).TotalMinutes);
+        var durationForRng = (int)Math.Clamp(Math.Ceiling(spanMinutes), 1, 240);
+
+        var envelopeForRng = new GenerateSimulationDatasetRequest
+        {
+            Name = request.Name,
+            DepthMeters = request.DepthMeters,
+            TemperatureCelsius = request.TemperatureCelsius,
+            SalinityPsu = request.SalinityPsu,
+            NoiseLevelDb = request.NoiseLevelDb,
+            BottomType = request.BottomType,
+            DurationMinutes = durationForRng,
+            FrequencyBandsHz = request.FrequencyBandsHz,
+            ModelVersion = request.ModelVersion,
+            AlignToFieldDatasetId = null
+        };
+
+        var rng = CreateSyntheticRandomSeeded(envelopeForRng, durationForRng, 1);
+
+        var nameBase = string.IsNullOrWhiteSpace(request.Name)
+            ? $"param-simulation-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}"
+            : request.Name.Trim();
+        var name = await EnsureUniqueDatasetNameAsync(dbContext, nameBase, cancellationToken);
+
+        var bottom = NormalizeBottomType(request.BottomType);
+        var tempC = decimal.Clamp(request.TemperatureCelsius, -2m, 40m);
+        var salinity = decimal.Clamp(request.SalinityPsu, 0m, 45m);
+        var defaultDepth = decimal.Clamp(request.DepthMeters, 1m, 12_000m);
+        var noiseRippleAmbient = NoiseRippleDb(request.NoiseLevelDb);
+
+        var dataset = new Dataset
+        {
+            Name = name,
+            Type = "simulation",
+            SourceSystem = "parameter-synthetic-field-aligned",
+            Version = string.IsNullOrWhiteSpace(request.ModelVersion)
+                ? "env-heuristic-v1"
+                : request.ModelVersion.Trim(),
+            TimeRangeStart = minTs,
+            TimeRangeEnd = maxTs,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+
+        dbContext.Datasets.Add(dataset);
+
+        var surrogateSpan = Math.Max(0, durationForRng - 1);
+        var heuristics = new decimal[rows.Count];
+        var sumField = 0m;
+        var sumHeuristic = 0m;
+
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var row = rows[i];
+            var surrogateMinute = rows.Count <= 1
+                ? 0
+                : (int)Math.Round(i * surrogateSpan / (double)(rows.Count - 1));
+            surrogateMinute = Math.Clamp(surrogateMinute, 0, durationForRng - 1);
+
+            var depthSample =
+                row.DepthMeters > 0 ? decimal.Clamp(row.DepthMeters, 1m, 12_000m) : defaultDepth;
+
+            var h = ComposeHeuristicSplDb(
+                row.FrequencyBand,
+                surrogateMinute,
+                depthSample,
+                bottom,
+                tempC,
+                salinity,
+                rng,
+                noiseRippleAmbient);
+            heuristics[i] = h;
+            sumField += row.AmplitudeDb;
+            sumHeuristic += h;
+        }
+
+        // Heuristic dB is illustrative; field CSV is on another absolute scale. Shift so means match — residuals
+        // reflect shape/timing mismatches rather than hundreds of dB systematic bias vs field.
+        var meanOffsetDb =
+            rows.Count > 0 ? decimal.Round((sumField - sumHeuristic) / rows.Count, 6) : 0m;
+
+        var samples = new List<AcousticSample>(rows.Count);
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var row = rows[i];
+            var surrogateMinute = rows.Count <= 1
+                ? 0
+                : (int)Math.Round(i * surrogateSpan / (double)(rows.Count - 1));
+            surrogateMinute = Math.Clamp(surrogateMinute, 0, durationForRng - 1);
+            var depthSample =
+                row.DepthMeters > 0 ? decimal.Clamp(row.DepthMeters, 1m, 12_000m) : defaultDepth;
+            var soundSpeed =
+                row.SoundSpeed ?? ApproximateSoundSpeedMps(tempC, salinity, depthSample);
+
+            samples.Add(new AcousticSample
+            {
+                Dataset = dataset,
+                Timestamp = row.Timestamp,
+                FrequencyBand = row.FrequencyBand,
+                AmplitudeDb = decimal.Round(heuristics[i] + meanOffsetDb, 4),
+                DepthMeters = depthSample,
+                RangeMeters = row.RangeMeters,
+                SoundSpeed = soundSpeed,
+                NoiseLevelDb = row.NoiseLevelDb ?? noiseRippleAmbient.AmbientField
+            });
+        }
+
+        dbContext.AcousticSamples.AddRange(samples);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return (dataset, samples.Count);
+    }
+
+    /// <inheritdoc />
+    public decimal EstimateAmplitudeDb(
+        decimal frequencyBandHz,
+        int surrogateMinuteIndex,
+        GenerateSimulationDatasetRequest envelope,
+        Random rng)
+    {
+        var duration = Math.Clamp(envelope.DurationMinutes, 1, 240);
+        var minute = Math.Clamp(surrogateMinuteIndex, 0, duration - 1);
+        var depth = decimal.Clamp(envelope.DepthMeters, 1m, 12_000m);
+        var tempC = decimal.Clamp(envelope.TemperatureCelsius, -2m, 40m);
+        var salinity = decimal.Clamp(envelope.SalinityPsu, 0m, 45m);
+        var bottom = NormalizeBottomType(envelope.BottomType);
+        var ripple = NoiseRippleDb(envelope.NoiseLevelDb);
+        return ComposeHeuristicSplDb(frequencyBandHz, minute, depth, bottom, tempC, salinity, rng, ripple);
+    }
+
+    private static decimal ComposeHeuristicSplDb(
+        decimal frequencyBandHz,
+        int surrogateMinuteWithinDuration,
+        decimal depthMeters,
+        string normalizedBottomType,
+        decimal tempCelsius,
+        decimal salinityPsu,
+        Random rng,
+        NoiseRipple noiseRipple)
+    {
+        var bottomLossDb = BottomAttenuationDb(normalizedBottomType);
+        var depthShelf = DepthSpreadDb(depthMeters);
+        var thermalHue = TemperatureSpreadDb(tempCelsius);
+        var salHue = SalinitySpreadDb(salinityPsu);
+        return ComposeHeuristicSplDbInner(
+            frequencyBandHz,
+            surrogateMinuteWithinDuration,
+            bottomLossDb,
+            depthShelf,
+            thermalHue,
+            salHue,
+            rng,
+            noiseRipple);
+    }
+
+    private static decimal ComposeHeuristicSplDbInner(
+        decimal frequencyBandHz,
+        int surrogateMinuteWithinDuration,
+        decimal bottomLossDb,
+        decimal depthShelf,
+        decimal thermalHue,
+        decimal salHue,
+        Random rng,
+        NoiseRipple noiseRipple)
+    {
+        var frequencyLossDb = FrequencySpreadDb(frequencyBandHz);
+        var slowDriftDb = SlowTemporalDriftDb(surrogateMinuteWithinDuration);
+        var baseLevel =
+            -68m
+            - bottomLossDb
+            - frequencyLossDb
+            + depthShelf
+            + thermalHue
+            + salHue
+            + slowDriftDb
+            + Ripple(rng);
+
+        baseLevel -= noiseRipple.JitterAmp * (decimal)rng.NextDouble();
+        return decimal.Round(baseLevel, 4);
+    }
+
+    internal static Random CreateSyntheticRandomSeeded(
+        GenerateSimulationDatasetRequest envelope,
+        int durationMinutesClamp,
+        int bandCardinality)
+    {
+        var duration = Math.Clamp(durationMinutesClamp, 1, 240);
+        return BuildRng(envelope, duration, bandCardinality);
+    }
+
+    internal static Task<string> EnsureUniqueDatasetNameAsync(
+        AppDbContext dbContext,
+        string nameBase,
+        CancellationToken cancellationToken) =>
+        EnsureUniqueDatasetName(dbContext, nameBase, cancellationToken);
 
     private static NoiseRipple NoiseRippleDb(decimal noiseAmbientDbRe1uPa)
     {
@@ -195,10 +409,17 @@ public sealed class ParameterSyntheticSimulationService : IParameterSyntheticSim
     private static decimal DepthSpreadDb(decimal depthMeters) =>
         decimal.Round(-Math.Max(0m, depthMeters - 20m) * 0.012m, 4);
 
+    /// <summary>
+    /// Extra “loss” vs a notional LF reference — must stay bounded for HF band columns stored in Hz
+    /// (e.g. sonar centroid 62 500 Hz would previously blow up ~kHz² to thousands of dB and break comparisons).
+    /// </summary>
     private static decimal FrequencySpreadDb(decimal bandHz)
     {
-        var kHzScale = decimal.Max(bandHz / 1000m, 0.18m);
-        return decimal.Round(kHzScale * 8.2m + 0.62m * kHzScale * kHzScale + 1.85m, 4);
+        var kHzRaw = decimal.Max(bandHz / 1000m, 0.18m);
+        var kHzScale = decimal.Min(kHzRaw, 10m);
+        var curved = decimal.Round(kHzScale * 8.2m + 0.62m * kHzScale * kHzScale + 1.85m, 4);
+        const decimal maxFrequencyPenaltyDb = 85m;
+        return decimal.Min(curved, maxFrequencyPenaltyDb);
     }
 
     private static decimal SalinitySpreadDb(decimal salinityPsu) =>
