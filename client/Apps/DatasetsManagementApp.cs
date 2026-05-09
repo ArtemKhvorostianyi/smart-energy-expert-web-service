@@ -6,122 +6,198 @@ namespace SmartEnergyExpert.Client.Apps;
     icon: Icons.Database,
     title: "Datasets management",
     group: ["Datasets"],
-    searchHints: ["datasets", "csv", "import", "upload", "delete", "create", "management", "samples"])]
+    searchHints: ["datasets", "csv", "import", "upload", "delete", "management", "samples"])]
 public sealed class DatasetsManagementApp : ViewBase
 {
+    private const string CsvImportSource = "csv-import";
+
     public override object? Build()
     {
         var api = UseService<ClientServices.IApiClient>();
         var refreshTick = UseState(0);
         var status = UseState("");
+        var deleteBusy = UseState(false);
 
-        var selectedDatasetOption = UseState("");
-        var csvFileUpload = UseState<FileUpload<byte[]>?>();
+        var simCsvUpload = UseState<FileUpload<byte[]>?>();
+        var fieldCsvUpload = UseState<FileUpload<byte[]>?>();
 
-        var busyImportFile = UseState(false);
-        var busyDelete = UseState(false);
+        var busySimImport = UseState(false);
+        var busyFieldImport = UseState(false);
+
+        var simUploadCore = UseUpload(MemoryStreamUploadHandler.Create(simCsvUpload));
+        var fieldUploadCore = UseUpload(MemoryStreamUploadHandler.Create(fieldCsvUpload));
 
         var datasetsQuery = UseQuery(
             key: (nameof(DatasetsManagementApp), refreshTick.Value),
             fetcher: async ct => await api.GetDatasetsAsync(ct));
 
-        var csvUploadCore = UseUpload(MemoryStreamUploadHandler.Create(csvFileUpload));
-        var csvUpload = csvUploadCore
+        var simUpload = simUploadCore
+            .Accept("text/csv,.csv,text/plain")
+            .MaxFileSize(FileSize.FromMegabytes(128));
+
+        var fieldUpload = fieldUploadCore
             .Accept("text/csv,.csv,text/plain")
             .MaxFileSize(FileSize.FromMegabytes(128));
 
         var datasets = datasetsQuery.Value ?? [];
-        var datasetOptions = datasets.Select(ToOption).ToArray();
-        var canPickDataset = datasetOptions.Length > 0;
-        var csvBytesReady = csvFileUpload.Value?.Content is byte[] csvBuf && csvBuf.Length > 0;
+        var datasetsSorted = datasets
+            .OrderByDescending(d => d.SampleCount)
+            .ThenBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var simBytesReady = simCsvUpload.Value?.Content is byte[] sb && sb.Length > 0;
+        var fieldBytesReady = fieldCsvUpload.Value?.Content is byte[] fb && fb.Length > 0;
+
+        object datasetsList;
+        if (datasetsSorted.Length == 0 && !datasetsQuery.Loading && datasetsQuery.Error is null)
+        {
+            datasetsList = Text.Muted("No datasets in the workspace yet — import CSV above or seed the API.");
+        }
+        else if (datasetsSorted.Length == 0)
+        {
+            datasetsList = new Fragment();
+        }
+        else
+        {
+            var stack = Layout.Vertical().Gap(1);
+            foreach (var dataset in datasetsSorted)
+            {
+                var title = string.IsNullOrWhiteSpace(dataset.Name) ? "(unnamed dataset)" : dataset.Name;
+                var id = dataset.Id;
+                stack |= new Card(
+                    Layout.Vertical().Gap(1)
+                    | Text.H3(title)
+                    | new Button("Delete dataset")
+                        .Disabled(deleteBusy.Value)
+                        .OnClick(async () =>
+                        {
+                            deleteBusy.Set(true);
+                            try
+                            {
+                                await api.DeleteDatasetAsync(id);
+                                refreshTick.Set(refreshTick.Value + 1);
+                                status.Set($"Deleted '{title}'.");
+                            }
+                            catch (Exception ex)
+                            {
+                                status.Set($"Delete failed: {ex.Message}");
+                            }
+                            finally
+                            {
+                                deleteBusy.Set(false);
+                            }
+                        }));
+            }
+
+            datasetsList = stack;
+        }
 
         return Layout.Vertical().Gap(2)
                | Text.H2("Datasets management")
-               | Text.Muted("Import CSV into a field dataset here. Simulation datasets: Environment simulation.")
+               | Text.Muted("CSV import creates a new dataset named from the file. Below lists every dataset from the API (seeded, synthetic, imported).")
 
                | (datasetsQuery.Error is { } err ? Callout.Warning(err.Message) : new Fragment())
                | (datasetsQuery.Loading ? Callout.Info("Loading datasets…") : new Fragment())
 
                | new Card(
-                   Layout.Vertical().Gap(1)
-                   | Text.H3("Target dataset for import / delete")
-                   | Text.Muted("Which dataset receives the CSV.")
-                   | (canPickDataset
-                       ? selectedDatasetOption.ToSelectInput(datasetOptions)
-                       : Text.Muted("No datasets loaded (e.g. seed or API empty)."))
-                   | Text.Muted("UTF-8 CSV: timestamp plus six numeric columns (same header as data/arlut_field.csv).")
-                   | csvFileUpload
-                       .ToFileInput(csvUpload)
-                       .Variant(FileInputVariant.Default)
-                       .Placeholder("Choose .csv …")
-                   | new Button("Import")
-                       .Disabled(!canPickDataset || busyImportFile.Value || !csvBytesReady)
-                       .Primary()
-                       .OnClick(async () =>
-                       {
-                           var id = TryParseDatasetId(selectedDatasetOption.Value);
-                           if (id == Guid.Empty)
-                           {
-                               status.Set("Pick a target dataset.");
-                               return;
-                           }
+                   Layout.Vertical().Gap(2)
+                   | Text.H3("Import CSV")
+                   | Text.Muted("UTF-8: timestamp plus six numeric columns (same header as data/arlut_field.csv). Each import creates a fresh dataset.")
 
-                           if (csvFileUpload.Value?.Content is not byte[] bytes || bytes.Length == 0)
-                           {
-                               status.Set("Choose a CSV file first.");
-                               return;
-                           }
+                   | (Layout.Vertical().Gap(1)
+                       | Text.Block("Simulation").Bold()
+                       | Text.Muted("Type simulation — use in Hydroacoustic Comparison as the model branch.")
+                       | simCsvUpload
+                           .ToFileInput(simUpload)
+                           .Placeholder("Choose simulation .csv …")
+                       | new Button("Import simulation CSV")
+                           .Primary()
+                           .Disabled(busySimImport.Value || !simBytesReady)
+                           .OnClick(async () => await ImportCsvBranchAsync(
+                               api,
+                               simCsvUpload,
+                               "simulation",
+                               busySimImport,
+                               refreshTick,
+                               status,
+                               () => simCsvUpload.Set(null))))
 
-                           busyImportFile.Set(true);
-                           try
-                           {
-                               var uf = csvFileUpload.Value!;
-                               var payload = StripUtf8Bom(bytes);
-                               var n = await api.ImportCsvFileMultipartAsync(id, payload, uf.FileName ?? "import.csv");
-                               refreshTick.Set(refreshTick.Value + 1);
-                               csvFileUpload.Set(null);
+                   | (Layout.Vertical().Gap(1)
+                       | Text.Block("Field experiments").Bold()
+                       | Text.Muted("Type field — measurement branch for comparison.")
+                       | fieldCsvUpload
+                           .ToFileInput(fieldUpload)
+                           .Placeholder("Choose field .csv …")
+                       | new Button("Import field CSV")
+                           .Primary()
+                           .Disabled(busyFieldImport.Value || !fieldBytesReady)
+                           .OnClick(async () => await ImportCsvBranchAsync(
+                               api,
+                               fieldCsvUpload,
+                               "field",
+                               busyFieldImport,
+                               refreshTick,
+                               status,
+                               () => fieldCsvUpload.Set(null)))))
 
-                               status.Set(n == 0
-                                   ? "0 rows imported (check format)."
-                                   : $"Imported {n} row(s).");
-                           }
-                           catch (Exception ex)
-                           {
-                               status.Set($"Import failed: {ex.Message}");
-                           }
-                           finally
-                           {
-                               busyImportFile.Set(false);
-                           }
-                       })
-                   | new Button("Delete selected dataset").Disabled(!canPickDataset || busyDelete.Value).OnClick(async () =>
-                   {
-                       var id = TryParseDatasetId(selectedDatasetOption.Value);
-                       if (id == Guid.Empty)
-                       {
-                           status.Set("Pick a target dataset.");
-                           return;
-                       }
-
-                       busyDelete.Set(true);
-                       try
-                       {
-                           await api.DeleteDatasetAsync(id);
-                           refreshTick.Set(refreshTick.Value + 1);
-                           selectedDatasetOption.Set("");
-                           status.Set($"Deleted dataset {id}.");
-                       }
-                       catch (Exception ex)
-                       {
-                           status.Set($"Delete failed: {ex.Message}");
-                       }
-                       finally
-                       {
-                           busyDelete.Set(false);
-                       }
-                   }))
+               | Text.H3("Datasets")
+               | Text.Muted("Each card lists one dataset name. Delete removes it and linked comparison runs.")
+               | datasetsList
 
                | (string.IsNullOrWhiteSpace(status.Value) ? new Fragment() : Callout.Info(status.Value));
+    }
+
+    private static async Task ImportCsvBranchAsync(
+        ClientServices.IApiClient api,
+        IState<FileUpload<byte[]>?> fileState,
+        string datasetType,
+        IState<bool> busy,
+        IState<int> refreshTick,
+        IState<string> status,
+        Action clearFile)
+    {
+        var upload = fileState.Value;
+        if (upload?.Content is not byte[] bytes || bytes.Length == 0)
+        {
+            status.Set("Choose a CSV file first.");
+            return;
+        }
+
+        var rawName = string.IsNullOrWhiteSpace(upload.FileName) ? "import.csv" : upload.FileName.Trim();
+        var datasetName = Path.GetFileNameWithoutExtension(rawName);
+        if (string.IsNullOrWhiteSpace(datasetName))
+        {
+            datasetName = "import";
+        }
+
+        busy.Set(true);
+        try
+        {
+            var created = await api.CreateDatasetAsync(new ClientServices.CreateDatasetRequestDto
+            {
+                Name = datasetName,
+                Type = datasetType,
+                SourceSystem = CsvImportSource,
+                Version = "v1"
+            });
+
+            var payload = StripUtf8Bom(bytes);
+            var n = await api.ImportCsvFileMultipartAsync(created.Id, payload, Path.GetFileName(rawName));
+            refreshTick.Set(refreshTick.Value + 1);
+            clearFile();
+
+            status.Set(n == 0
+                ? $"Created '{created.Name}' but imported 0 rows — check CSV format."
+                : $"Imported {n} row(s) into '{created.Name}' ({datasetType}).");
+        }
+        catch (Exception ex)
+        {
+            status.Set($"Import failed: {ex.Message}");
+        }
+        finally
+        {
+            busy.Set(false);
+        }
     }
 
     private static byte[] StripUtf8Bom(byte[] raw)
@@ -136,30 +212,4 @@ public sealed class DatasetsManagementApp : ViewBase
         return raw;
     }
 
-    private static string ToOption(ClientServices.DatasetDto dataset) =>
-        $"{dataset.Name} | {dataset.SourceSystem} | {dataset.SampleCount} samples [{dataset.Id}]";
-
-    private static Guid TryParseDatasetId(string value)
-    {
-        try
-        {
-            return ParseDatasetId(value);
-        }
-        catch
-        {
-            return Guid.Empty;
-        }
-    }
-
-    private static Guid ParseDatasetId(string value)
-    {
-        var openIndex = value.LastIndexOf('[');
-        var closeIndex = value.LastIndexOf(']');
-        if (openIndex < 0 || closeIndex <= openIndex)
-        {
-            throw new InvalidOperationException("Invalid dataset value.");
-        }
-
-        return Guid.Parse(value.Substring(openIndex + 1, closeIndex - openIndex - 1));
-    }
 }

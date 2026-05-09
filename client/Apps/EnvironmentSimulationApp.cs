@@ -11,6 +11,7 @@ namespace SmartEnergyExpert.Client.Apps;
 public sealed class EnvironmentSimulationApp : ViewBase
 {
     private const int SamplePageSize = 150;
+    private const float TabularPreviewHeightFraction = 0.2f;
 
     private static string FieldAlignIndependentOption() =>
         $"— Independent grid (duration & bands below) — [{Guid.Empty}]";
@@ -259,57 +260,60 @@ public sealed class EnvironmentSimulationApp : ViewBase
                | BuildAcousticSamplesTable(page.Items);
     }
 
-    private static Table BuildAcousticSamplesTable(IReadOnlyList<ClientServices.AcousticSampleRowDto> rows)
+    private sealed record AcousticSamplePreviewRow(
+        DateTimeOffset TimestampUtc,
+        decimal FrequencyBandHz,
+        decimal AmplitudeDb,
+        decimal DepthMeters,
+        decimal RangeMeters,
+        decimal? SoundSpeed,
+        decimal? NoiseLevelDb);
+
+    private static object BuildAcousticSamplesTable(IReadOnlyList<ClientServices.AcousticSampleRowDto> rows)
     {
-        var header = new TableRow(
-            new TableCell(Text.Block("Timestamp (UTC)").Bold()),
-            new TableCell(Text.Block("f (Hz)").Bold()),
-            new TableCell(Text.Block("Amplitude (dB)").Bold()),
-            new TableCell(Text.Block("Depth (m)").Bold()),
-            new TableCell(Text.Block("Range (m)").Bold()),
-            new TableCell(Text.Block("Sound speed").Bold()),
-            new TableCell(Text.Block("Noise (dB)").Bold()));
+        var data = rows
+            .Select(r => new AcousticSamplePreviewRow(
+                r.Timestamp,
+                r.FrequencyBand,
+                r.AmplitudeDb,
+                r.DepthMeters,
+                r.RangeMeters,
+                r.SoundSpeed,
+                r.NoiseLevelDb))
+            .ToArray();
 
-        var table = new Table(header);
-        foreach (var r in rows)
-        {
-            table |= new TableRow(
-                new TableCell(Text.Block(r.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"))),
-                new TableCell(Text.Block(r.FrequencyBand.ToString("G29"))),
-                new TableCell(Text.Block(r.AmplitudeDb.ToString("F2"))),
-                new TableCell(Text.Block(r.DepthMeters.ToString("F2"))),
-                new TableCell(Text.Block(r.RangeMeters.ToString("F1"))),
-                new TableCell(Text.Block(r.SoundSpeed?.ToString("F2") ?? "—")),
-                new TableCell(Text.Block(r.NoiseLevelDb?.ToString("F2") ?? "—")));
-        }
+        var grid = data.ToTable()
+            .Header(x => x.TimestampUtc, "Timestamp (UTC)")
+            .Header(x => x.FrequencyBandHz, "f (Hz)")
+            .Header(x => x.AmplitudeDb, "Amplitude (dB)")
+            .Header(x => x.DepthMeters, "Depth (m)")
+            .Header(x => x.RangeMeters, "Range (m)")
+            .Header(x => x.SoundSpeed, "Sound speed")
+            .Header(x => x.NoiseLevelDb, "Noise (dB)")
+            .Width(Size.Full());
 
-        return table;
+        return (Layout.Vertical()
+                .Height(Size.Fraction(TabularPreviewHeightFraction))
+                .Scroll(Scroll.Vertical))
+               | grid;
     }
 
-    private static Table BuildSessionSimulationsTable(ImmutableArray<SimulatedDatasetGridRow> rows)
+    private static object BuildSessionSimulationsTable(ImmutableArray<SimulatedDatasetGridRow> rows)
     {
-        var header = new TableRow(
-            new TableCell(Text.Block("Dataset").Bold()),
-            new TableCell(Text.Block("Samples").Bold()),
-            new TableCell(Text.Block("Source").Bold()),
-            new TableCell(Text.Block("Type").Bold()),
-            new TableCell(Text.Block("Dataset id").Bold()),
-            new TableCell(Text.Block("Period start").Bold()),
-            new TableCell(Text.Block("Period end").Bold()));
+        var data = rows.OrderBy(r => r.Name).ToArray();
+        var grid = data.ToTable()
+            .Header(r => r.Name, "Dataset")
+            .Header(r => r.SampleCount, "Samples")
+            .Header(r => r.SourceSystem, "Source")
+            .Header(r => r.Type, "Type")
+            .Header(r => r.Id, "Dataset id")
+            .Header(r => r.TimeRangeStart, "Period start")
+            .Header(r => r.TimeRangeEnd, "Period end")
+            .Width(Size.Full());
 
-        var table = new Table(header);
-        foreach (var r in rows)
-        {
-            table |= new TableRow(
-                new TableCell(Text.Block(r.Name)),
-                new TableCell(Text.Block(r.SampleCount.ToString())),
-                new TableCell(Text.Block(r.SourceSystem)),
-                new TableCell(Text.Block(r.Type)),
-                new TableCell(Text.Block(r.Id.ToString())),
-                new TableCell(Text.Block(r.TimeRangeStart.ToString("yyyy-MM-dd HH:mm"))),
-                new TableCell(Text.Block(r.TimeRangeEnd.ToString("yyyy-MM-dd HH:mm"))));
-        }
-
-        return table;
+        return (Layout.Vertical()
+                .Height(Size.Fraction(TabularPreviewHeightFraction))
+                .Scroll(Scroll.Vertical))
+               | grid;
     }
 }

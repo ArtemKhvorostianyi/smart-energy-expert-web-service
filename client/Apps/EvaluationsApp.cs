@@ -91,7 +91,7 @@ public sealed class EvaluationsApp : ViewBase
                                ? Skeleton.Card()
                                : fieldOptions.Length == 0
                                    ? Callout.Warning(
-                                       "No field datasets loaded. Create type field in Datasets management, import CSV, then refresh.")
+                                       "No field datasets loaded. Import a field CSV in Datasets management or use the seeded ARLUT dataset, then refresh.")
                                    : selectedField.ToSelectInput(fieldOptions))
                            | Text.Muted(
                                "Field — measurements. data/ARLUT_01_partA_01_dataset_field_stride2500.csv is loaded at API startup as dataset name: ARLUT 01 part A field stride2500 (if missing)."))
