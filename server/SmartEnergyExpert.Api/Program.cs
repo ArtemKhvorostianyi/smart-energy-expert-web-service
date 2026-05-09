@@ -7,11 +7,18 @@ using SmartEnergyExpert.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Sliplane резервує PORT і б’є healthcheck у http://localhost:$PORT/ (див. їхні docs).
-// Якщо слухати лише ASPNETCORE_URLS=8080, а PORT інший — перевірка не доходить до Kestrel.
-var platformPort = Environment.GetEnvironmentVariable("PORT");
-if (!string.IsNullOrWhiteSpace(platformPort))
-    builder.WebHost.UseUrls($"http://+:{platformPort}");
+// У Docker/Sliplane healthcheck зазвичай http://127.0.0.1:$PORT/. Kestrel з http://+:8080 часто
+// показує лише [::]:8080; на частині Linux 127.0.0.1 не потрапляє на той самий listen — «мертвий» сервіс.
+// Плюс Sliplane може задати PORT ≠ 8080. У контейнері слухаємо 0.0.0.0 і PORT або 8080.
+var inDotnetContainer = string.Equals(
+    Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"), "true", StringComparison.OrdinalIgnoreCase);
+var inLinuxDocker = OperatingSystem.IsLinux() && System.IO.File.Exists("/.dockerenv");
+if (inDotnetContainer || inLinuxDocker)
+{
+    var portEnv = Environment.GetEnvironmentVariable("PORT");
+    var listenPort = string.IsNullOrWhiteSpace(portEnv) ? "8080" : portEnv;
+    builder.WebHost.UseUrls($"http://0.0.0.0:{listenPort}");
+}
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
