@@ -2,12 +2,10 @@ using ClientServices = SmartEnergyExpert.Client.Services;
 
 namespace SmartEnergyExpert.Client.Apps;
 
-[App(icon: Icons.Waves, title: "Hydroacoustic Comparison", searchHints: ["hydroacoustic", "comparison", "charts", "blades", "preset", "signal", "explorer", "dataset overview"])]
+[App(icon: Icons.Waves, title: "Hydroacoustic Comparison", searchHints: ["hydroacoustic", "comparison", "charts", "blades", "signal", "explorer", "dataset overview"])]
 public sealed class EvaluationsApp : ViewBase
 {
     public override object? Build() => UseBlades(() => new WorkspaceBlade(), "Hydroacoustic Comparison");
-
-    private sealed record ComparisonPreset(string Name, Guid SimulationDatasetId, Guid FieldDatasetId, int TopN);
 
     private sealed class WorkspaceBlade : ViewBase
     {
@@ -21,9 +19,6 @@ public sealed class EvaluationsApp : ViewBase
             var topN = UseState(15m);
             var status = UseState("");
             var result = UseState<ClientServices.ComparisonResultDto?>(null);
-            var presetName = UseState("");
-            var selectedPreset = UseState("");
-            var presets = UseState(new List<ComparisonPreset>());
 
             var datasetsQuery = UseQuery(
                 key: (nameof(WorkspaceBlade), refreshTick.Value),
@@ -77,7 +72,6 @@ public sealed class EvaluationsApp : ViewBase
                            }))
                    | Layout.Vertical().Gap(2)
                        | Text.H2("Hydroacoustic Comparison")
-                       | BuildPresetCard(presetName, selectedPreset, presets, selectedSimulation, selectedField, topN, datasets, status)
                        | new Card(
                            Layout.Vertical().Gap(1)
                            | (Layout.Horizontal().Gap(2)
@@ -245,72 +239,6 @@ public sealed class EvaluationsApp : ViewBase
                        : Text.Block($"Recorded noise telemetry (avg): {o.MeanNoiseLevelDb.Value:F2} dB"));
         }
 
-        private static object BuildPresetCard(
-            IState<string> presetName,
-            IState<string> selectedPreset,
-            IState<List<ComparisonPreset>> presets,
-            IState<string> selectedSimulation,
-            IState<string> selectedField,
-            IState<decimal> topN,
-            IReadOnlyList<ClientServices.DatasetDto> datasets,
-            IState<string> status)
-        {
-            var presetOptions = presets.Value.Select(x => x.Name).ToArray();
-            return new Card(
-                Layout.Vertical()
-                | Text.H3("Presets")
-                | presetName.ToTextInput().Placeholder("Preset name")
-                | Text.Muted("Enter a human-readable name for this reusable comparison configuration.")
-                | (presetOptions.Length == 0 ? Text.Muted("No presets.") : selectedPreset.ToSelectInput(presetOptions))
-                | (Layout.Horizontal().Gap(2)
-                    | new Button("Save").OnClick(() =>
-                    {
-                        var simId = TryParseDatasetId(selectedSimulation.Value);
-                        var fieldId = TryParseDatasetId(selectedField.Value);
-                        if (simId == Guid.Empty || fieldId == Guid.Empty)
-                        {
-                            status.Set("Select datasets before saving preset.");
-                            return;
-                        }
-
-                        var name = string.IsNullOrWhiteSpace(presetName.Value) ? $"Preset {DateTimeOffset.UtcNow:HH:mm:ss}" : presetName.Value.Trim();
-                        var next = presets.Value.ToList();
-                        next.Add(new ComparisonPreset(name, simId, fieldId, (int)topN.Value));
-                        presets.Set(next);
-                        selectedPreset.Set(name);
-                        status.Set("Preset saved.");
-                    })
-                    | new Button("Apply").Disabled(string.IsNullOrWhiteSpace(selectedPreset.Value)).OnClick(() =>
-                    {
-                        var preset = presets.Value.FirstOrDefault(x => x.Name == selectedPreset.Value);
-                        if (preset is null)
-                        {
-                            status.Set("Preset not found.");
-                            return;
-                        }
-
-                        var sim = datasets.FirstOrDefault(x => x.Id == preset.SimulationDatasetId);
-                        var field = datasets.FirstOrDefault(x => x.Id == preset.FieldDatasetId);
-                        if (sim is null || field is null)
-                        {
-                            status.Set("Preset datasets missing.");
-                            return;
-                        }
-
-                        selectedSimulation.Set(ToOption(sim));
-                        selectedField.Set(ToOption(field));
-                        topN.Set(preset.TopN);
-                        status.Set("Preset applied.");
-                    })
-                    | new Button("Delete").Disabled(string.IsNullOrWhiteSpace(selectedPreset.Value)).OnClick(() =>
-                    {
-                        var next = presets.Value.Where(x => x.Name != selectedPreset.Value).ToList();
-                        presets.Set(next);
-                        selectedPreset.Set("");
-                        status.Set("Preset deleted.");
-                    })));
-        }
-
         private static object BuildResultCards(ClientServices.ComparisonResultDto result)
         {
             var recommendationsStack = Layout.Vertical().Gap(2);
@@ -412,21 +340,6 @@ public sealed class EvaluationsApp : ViewBase
                 new { Metric = "P95", Value = (double)result.P95AbsoluteError }
             };
 
-            var trendRows = result.TopDifferences
-                .Take(20)
-                .Select(x => new
-                {
-                    Time = x.Timestamp.ToString("HH:mm:ss.fff"),
-                    RelativeError = (double)x.RelativeErrorPercent,
-                    AbsoluteError = (double)x.AbsoluteError
-                })
-                .ToArray();
-
-            var severityRows = result.TopDifferences
-                .GroupBy(x => x.Severity)
-                .Select(g => new { Severity = g.Key, Count = g.Count() })
-                .ToArray();
-
             var overlayBand = result.OverlaySeries.FirstOrDefault()?.FrequencyBand ?? 0m;
             var overlayRows = result.OverlaySeries
                 .Select(x => new
@@ -481,23 +394,7 @@ public sealed class EvaluationsApp : ViewBase
                                e => e.Cell,
                                [e => e.Sum(v => v.Error)],
                                BarChartStyles.Default))
-                       | Text.Muted("Bars mimic a heat-intensity ranking: tallest cells are the hottest frequency-time buckets."))
-                   | new Card(
-                       Layout.Vertical()
-                       | Text.Block("Top difference trend: relative vs absolute")
-                       | trendRows.ToLineChart(
-                           e => e.Time,
-                           [e => e.Sum(v => v.RelativeError), e => e.Sum(v => v.AbsoluteError)],
-                           LineChartStyles.Dashboard)
-                       | Text.Muted("Relative and absolute errors for the fiercest outliers."))
-                   | new Card(
-                       Layout.Vertical()
-                       | Text.Block("Severity distribution (Top-N)")
-                       | severityRows.ToPieChart(
-                           e => e.Severity,
-                           e => e.Sum(v => v.Count),
-                           PieChartStyles.Default)
-                       | Text.Muted("Share of LOW/MODERATE/HIGH/CRITICAL among the surfaced Top-N list."));
+                       | Text.Muted("Bars mimic a heat-intensity ranking: tallest cells are the hottest frequency-time buckets."));
         }
     }
 

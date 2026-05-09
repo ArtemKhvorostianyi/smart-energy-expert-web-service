@@ -9,23 +9,15 @@ namespace SmartEnergyExpert.Client.Apps;
     searchHints: ["datasets", "csv", "import", "upload", "delete", "create", "management", "samples"])]
 public sealed class DatasetsManagementApp : ViewBase
 {
-    private static readonly string[] DatasetTypeOptions = ["simulation", "field"];
-
     public override object? Build()
     {
         var api = UseService<ClientServices.IApiClient>();
         var refreshTick = UseState(0);
         var status = UseState("");
 
-        var newName = UseState("");
-        var newType = UseState("field");
-        var newSourceSystem = UseState("csv-import");
-        var newVersion = UseState("v1");
-
         var selectedDatasetOption = UseState("");
         var csvFileUpload = UseState<FileUpload<byte[]>?>();
 
-        var busyCreate = UseState(false);
         var busyImportFile = UseState(false);
         var busyDelete = UseState(false);
 
@@ -45,54 +37,10 @@ public sealed class DatasetsManagementApp : ViewBase
 
         return Layout.Vertical().Gap(2)
                | Text.H2("Datasets management")
-               | Text.P(
-                   "Create empty datasets, import hydroacoustic samples from a CSV file via the picker below, "
-                   + "and remove datasets together with comparisons that referenced them.")
+               | Text.Muted("Import CSV into a field dataset here. Simulation datasets: Environment simulation.")
 
                | (datasetsQuery.Error is { } err ? Callout.Warning(err.Message) : new Fragment())
                | (datasetsQuery.Loading ? Callout.Info("Loading datasets…") : new Fragment())
-
-               | new Card(
-                   Layout.Vertical().Gap(1)
-                   | Text.H3("Create dataset")
-                   | newName.ToTextInput().Placeholder("Name")
-                   | Text.Muted("Type: simulation (model output) vs field (measurements). Used by the comparison workflow.")
-                   | newType.ToSelectInput(DatasetTypeOptions)
-                   | newSourceSystem.ToTextInput().Placeholder("Source system (e.g. csv-import)")
-                   | newVersion.ToTextInput().Placeholder("Version")
-                   | new Button("Create dataset").Primary().Disabled(busyCreate.Value).OnClick(async () =>
-                   {
-                       if (string.IsNullOrWhiteSpace(newName.Value))
-                       {
-                           status.Set("Enter a dataset name.");
-                           return;
-                       }
-
-                       busyCreate.Set(true);
-                       try
-                       {
-                           var created = await api.CreateDatasetAsync(new ClientServices.CreateDatasetRequestDto
-                           {
-                               Name = newName.Value.Trim(),
-                               Type = string.IsNullOrWhiteSpace(newType.Value) ? "field" : newType.Value.Trim(),
-                               SourceSystem = string.IsNullOrWhiteSpace(newSourceSystem.Value)
-                                   ? "csv-import"
-                                   : newSourceSystem.Value.Trim(),
-                               Version = string.IsNullOrWhiteSpace(newVersion.Value) ? "v1" : newVersion.Value.Trim()
-                           });
-                           refreshTick.Set(refreshTick.Value + 1);
-                           selectedDatasetOption.Set(ToOption(created));
-                           status.Set($"Created '{created.Name}' ({created.Type}), id={created.Id}. Import CSV next.");
-                       }
-                       catch (Exception ex)
-                       {
-                           status.Set($"Create failed: {ex.Message}");
-                       }
-                       finally
-                       {
-                           busyCreate.Set(false);
-                       }
-                   }))
 
                | new Card(
                    Layout.Vertical().Gap(1)
@@ -100,10 +48,7 @@ public sealed class DatasetsManagementApp : ViewBase
                    | Text.Muted("Which dataset receives the CSV.")
                    | (canPickDataset
                        ? selectedDatasetOption.ToSelectInput(datasetOptions)
-                       : Text.Muted("No datasets yet — create one first.")))
-
-               | new Card(
-                   Layout.Vertical().Gap(1)
+                       : Text.Muted("No datasets loaded (e.g. seed or API empty)."))
                    | Text.Muted("UTF-8 CSV: timestamp plus six numeric columns (same header as data/arlut_field.csv).")
                    | csvFileUpload
                        .ToFileInput(csvUpload)
@@ -117,7 +62,7 @@ public sealed class DatasetsManagementApp : ViewBase
                            var id = TryParseDatasetId(selectedDatasetOption.Value);
                            if (id == Guid.Empty)
                            {
-                               status.Set("Pick a dataset in Target dataset above.");
+                               status.Set("Pick a target dataset.");
                                return;
                            }
 
@@ -137,29 +82,24 @@ public sealed class DatasetsManagementApp : ViewBase
                                csvFileUpload.Set(null);
 
                                status.Set(n == 0
-                                   ? "Import finished — 0 rows accepted (check column format)."
+                                   ? "0 rows imported (check format)."
                                    : $"Imported {n} row(s).");
                            }
                            catch (Exception ex)
                            {
-                               status.Set($"CSV import failed: {ex.Message}");
+                               status.Set($"Import failed: {ex.Message}");
                            }
                            finally
                            {
                                busyImportFile.Set(false);
                            }
-                       }))
-
-               | new Card(
-                   Layout.Vertical().Gap(1)
-                   | Text.H3("Delete dataset")
-                   | Text.Muted("Deletes dataset, samples, and comparisons that referenced it.")
+                       })
                    | new Button("Delete selected dataset").Disabled(!canPickDataset || busyDelete.Value).OnClick(async () =>
                    {
                        var id = TryParseDatasetId(selectedDatasetOption.Value);
                        if (id == Guid.Empty)
                        {
-                           status.Set("Pick a dataset in Target dataset above.");
+                           status.Set("Pick a target dataset.");
                            return;
                        }
 
@@ -169,7 +109,7 @@ public sealed class DatasetsManagementApp : ViewBase
                            await api.DeleteDatasetAsync(id);
                            refreshTick.Set(refreshTick.Value + 1);
                            selectedDatasetOption.Set("");
-                           status.Set($"Dataset {id} deleted.");
+                           status.Set($"Deleted dataset {id}.");
                        }
                        catch (Exception ex)
                        {
