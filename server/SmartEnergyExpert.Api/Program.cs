@@ -63,17 +63,33 @@ app.Run();
 static string ResolveNpgsqlConnectionString(WebApplicationBuilder builder)
 {
     var conn = builder.Configuration.GetConnectionString("DefaultConnection");
+
+    if (builder.Environment.IsProduction())
+    {
+        if (string.IsNullOrWhiteSpace(conn) || LooksLikeLocalPostgresHost(conn))
+        {
+            throw new InvalidOperationException(
+                "У Production потрібен PostgreSQL. Задай на сервісі API змінну ConnectionStrings__DefaultConnection "
+                + "(повний рядок Npgsql). Значення з appsettings.json (localhost) у контейнері не підходить — "
+                + "Host має бути internal hostname сервісу Postgres у Sliplane (див. Settings → Service Info).");
+        }
+
+        return conn;
+    }
+
     if (!string.IsNullOrWhiteSpace(conn))
     {
         return conn;
     }
 
-    if (builder.Environment.IsProduction())
-    {
-        throw new InvalidOperationException(
-            "У Production потрібен PostgreSQL. Задай змінну середовища ConnectionStrings__DefaultConnection "
-            + "(повний рядок Npgsql). У Docker Host не може бути localhost — використай hostname сервісу Postgres у Sliplane.");
-    }
-
     return "Host=localhost;Port=5432;Database=hydroacoustic_expert;Username=postgres;Password=postgres";
+}
+
+static bool LooksLikeLocalPostgresHost(string connectionString)
+{
+    var s = connectionString.ToLowerInvariant();
+    return s.Contains("host=localhost")
+        || s.Contains("host=127.0.0.1")
+        || s.Contains("server=localhost")
+        || s.Contains("server=127.0.0.1");
 }
