@@ -57,6 +57,8 @@ if (app.Environment.IsDevelopment())
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+// Sliplane / Docker healthcheck часто б’є в "/"; контролери лише під api/* — без цього 404 і рестарти.
+app.MapGet("/", () => Results.Ok());
 
 app.Run();
 
