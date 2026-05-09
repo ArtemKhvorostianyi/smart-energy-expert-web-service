@@ -53,7 +53,8 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
+// TLS завершується на Sliplane / іншому edge; Kestrel лише HTTP — UseHttpsRedirection дає
+// "Failed to determine the https port" і не потрібен для цього API.
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

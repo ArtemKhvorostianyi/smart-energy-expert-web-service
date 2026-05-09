@@ -65,6 +65,8 @@ API слухає **8080** (`ASPNETCORE_URLS` у Dockerfile).
    | `Jwt__Key` | Довгий випадковий секрет (не `dev-only-…`) |
    | `Jwt__Issuer` / `Jwt__Audience` | За потреби; інакше дефолти з `Program.cs` |
 
+   **Postgres:** у змінній `ConnectionStrings__DefaultConnection` поле **`Host` не може бути `localhost`** всередині контейнера API — це сам контейнер, не база. Використай **хост Postgres у Sliplane** (внутрішній hostname сервісу БД, наприклад з екрана того ж проєкту/мережі). Приклад: `Host=імя-сервісу-postgres;Port=5432;Database=hydroacoustic_expert;Username=…;Password=…`.
+
 5. Після старту перевір у браузері `https://<твій-api-хост>/` (або health, якщо додаси endpoint). Логін клієнта — той самий Basic/JWT, що й у сидів API (див. `DatabaseInitializer` / локальний пароль).
 
 ### 4. Локальний Ivy → прод API
