@@ -23,31 +23,70 @@ Local web service for comparing hydroacoustic modeling results with field experi
 - PostgreSQL: `localhost:5432`, database `hydroacoustic_expert`
 - Ivy client calls backend via `BackendApi:BaseUrl` (default `http://localhost:5109/`)
 
-## Deploy (Sliplane через Ivy)
+## Deploy (Sliplane: API у контейнері, Ivy локально)
 
-Тести й контейнер **не** стартують самі: образ збираєш локально або в CI/Sliplane build.
+Обхід **`ivy deploy` + Sliplane** (якщо Ivy падає на `Failed to parse server description`): API деплоїш як звичайний Docker-сервіс у Sliplane, клієнт запускаєш **`ivy run`** на машині й направляєш на прод-API.
 
-1. **Sliplane**: обліковий запис, [API key](https://sliplane.io/docs) у дашборді. За потреби — окремий сервер або створення через Ivy.
-2. **PostgreSQL**: окремий сервіс/база в Sliplane (або зовнішня), рядок підключення у форматі Npgsql.
-3. **Збірка образа API** (контекст — каталог проєкту API):
+### 1. PostgreSQL
 
-   ```bash
-   docker build -t hydro-api -f server/SmartEnergyExpert.Api/Dockerfile server/SmartEnergyExpert.Api
-   ```
+У Sliplane (або зовні) підніми Postgres, зніми рядок підключення Npgsql.
 
-4. **Ivy**: з кореня репозиторію виконай `ivy deploy`, обери **Sliplane**, вкажи API key; якщо Ivy питає Dockerfile — шлях до `server/SmartEnergyExpert.Api/Dockerfile`, build context — `server/SmartEnergyExpert.Api`.
-5. **Порт**: у образі за замовчуванням **8080** (`ASPNETCORE_URLS`). У Sliplane вистав маршрутизацію на цей порт (або зміни змінні в сервісі).
-6. **Змінні середовища** (обов’язково в проді):
+### 2. Образ API
+
+З кореня репозиторію:
+
+```bash
+docker build -t hydro-api:local -f server/SmartEnergyExpert.Api/Dockerfile .
+```
+
+Перевір локально (підстав свій рядок БД):
+
+```bash
+docker run --rm -p 8080:8080 \
+  -e ConnectionStrings__DefaultConnection="Host=…;Port=5432;Database=…;Username=…;Password=…" \
+  -e Jwt__Key="мінімум-32-символи-випадкового-секрету" \
+  hydro-api:local
+```
+
+API слухає **8080** (`ASPNETCORE_URLS` у Dockerfile).
+
+### 3. Сервіс у Sliplane (UI)
+
+1. Зайди в [Sliplane](https://sliplane.io/docs) → свій **сервер** → **New service** (або аналог для деплою контейнера).
+2. Варіанти образа:
+   - **Registry**: запуш `hydro-api:local` у GHCR / Docker Hub і вкажи образ у сервісі; або  
+   - **Build from Git**: репозиторій, **Dockerfile path** `server/SmartEnergyExpert.Api/Dockerfile`, **build context** — **корінь репозиторію** (`.` / default). Якщо в UI окреме поле «context», вкажи `/` або корінь, не лише `server/...`.
+3. У сервісі вистав **публічний порт** на контейнерний **8080** (або зміни `ASPNETCORE_URLS` і порт у Sliplane узгоджено).
+4. **Environment variables** для контейнера API:
 
    | Змінна | Призначення |
-   |--------|-------------|
-   | `ConnectionStrings__DefaultConnection` | Npgsql до PostgreSQL |
+   | -------- | ------------- |
+   | `ConnectionStrings__DefaultConnection` | Npgsql до Postgres |
    | `Jwt__Key` | Довгий випадковий секрет (не `dev-only-…`) |
    | `Jwt__Issuer` / `Jwt__Audience` | За потреби; інакше дефолти з `Program.cs` |
 
-7. **Ivy-клієнт**: `ivy run` зазвичай локально; у `appsettings` / конфіг клієнта вкажи `BackendApi:BaseUrl` на HTTPS URL сервісу Sliplane після деплою.
+5. Після старту перевір у браузері `https://<твій-api-хост>/` (або health, якщо додаси endpoint). Логін клієнта — той самий Basic/JWT, що й у сидів API (див. `DatabaseInitializer` / локальний пароль).
 
-Деталі провайдера: [Sliplane Documentation](https://sliplane.io/docs).
+### 4. Локальний Ivy → прод API
+
+У проєкті клієнта вже є **`client/appsettings.json`** (локальний `http://localhost:5109/`). Для прод-URL зручніше **user secrets** (не потрапляють у git):
+
+```bash
+cd client
+dotnet user-secrets set "BackendApi:BaseUrl" "https://<твій-api-хост>/" --project SmartEnergyExpert.Client.csproj
+dotnet user-secrets set "BackendApi:Email" "<email з сидів або твій>" --project SmartEnergyExpert.Client.csproj
+dotnet user-secrets set "BackendApi:Password" "<пароль>" --project SmartEnergyExpert.Client.csproj
+ivy auth add --provider Basic
+ivy run --browse
+```
+
+Альтернатива — змінні середовища перед `ivy run` (подвійне підкреслення `__`):
+
+`BackendApi__BaseUrl`, `BackendApi__Email`, `BackendApi__Password`.
+
+Шаблон без секретів у репо: **`client/appsettings.Production.json.example`** → скопіюй у `appsettings.Production.json` (файл у `.gitignore`), якщо так зручніше ніж secrets.
+
+Документація Sliplane: [docs.sliplane.io](https://docs.sliplane.io). Про збій Ivy `ivy deploy` + Sliplane — issue з логом `-v` у підтримку Ivy.
 
 ## Run locally
 

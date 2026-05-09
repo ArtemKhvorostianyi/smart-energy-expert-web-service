@@ -1,5 +1,7 @@
 bin/
 obj/
+# Локальний прод-бекенд (не комітити паролі)
+appsettings.Production.json
 *.sln.iml
 .idea/**/*
 **/.idea/*
