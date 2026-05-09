@@ -4,9 +4,9 @@ namespace SmartEnergyExpert.Client.Apps;
 
 [App(
     icon: Icons.Database,
-    title: "Datasets management",
-    group: ["Datasets"],
-    searchHints: ["datasets", "csv", "import", "upload", "delete", "management", "samples"])]
+    title: "Керування датасетами",
+    group: ["Датасети"],
+    searchHints: ["датасети", "csv", "імпорт", "видалення", "зразки", "datasets"])]
 public sealed class DatasetsManagementApp : ViewBase
 {
     private const string CsvImportSource = "csv-import";
@@ -51,7 +51,8 @@ public sealed class DatasetsManagementApp : ViewBase
         object datasetsList;
         if (datasetsSorted.Length == 0 && !datasetsQuery.Loading && datasetsQuery.Error is null)
         {
-            datasetsList = Text.Muted("No datasets in the workspace yet — import CSV above or seed the API.");
+            datasetsList = Text.Muted(
+                "Ще немає датасетів — імпортуйте CSV вище або ініціалізуйте дані через API.");
         }
         else if (datasetsSorted.Length == 0)
         {
@@ -62,12 +63,12 @@ public sealed class DatasetsManagementApp : ViewBase
             var stack = Layout.Vertical().Gap(1);
             foreach (var dataset in datasetsSorted)
             {
-                var title = string.IsNullOrWhiteSpace(dataset.Name) ? "(unnamed dataset)" : dataset.Name;
+                var title = string.IsNullOrWhiteSpace(dataset.Name) ? "(датасет без назви)" : dataset.Name;
                 var id = dataset.Id;
                 stack |= new Card(
                     Layout.Vertical().Gap(1)
                     | Text.H3(title)
-                    | new Button("Delete dataset")
+                    | new Button("Видалити датасет")
                         .Disabled(deleteBusy.Value)
                         .OnClick(async () =>
                         {
@@ -76,11 +77,11 @@ public sealed class DatasetsManagementApp : ViewBase
                             {
                                 await api.DeleteDatasetAsync(id);
                                 refreshTick.Set(refreshTick.Value + 1);
-                                status.Set($"Deleted '{title}'.");
+                                status.Set($"Видалено «{title}».");
                             }
                             catch (Exception ex)
                             {
-                                status.Set($"Delete failed: {ex.Message}");
+                                status.Set($"Не вдалося видалити: {ex.Message}");
                             }
                             finally
                             {
@@ -93,24 +94,27 @@ public sealed class DatasetsManagementApp : ViewBase
         }
 
         return Layout.Vertical().Gap(2)
-               | Text.H2("Datasets management")
-               | Text.Muted("CSV import creates a new dataset named from the file. Below lists every dataset from the API (seeded, synthetic, imported).")
+               | Text.H2("Керування датасетами")
+               | Text.Muted(
+                   "Імпорт CSV створює новий датасет з іменем файлу. Нижче — усі датасети з API (засіяні, синтетичні, імпортовані).")
 
                | (datasetsQuery.Error is { } err ? Callout.Warning(err.Message) : new Fragment())
-               | (datasetsQuery.Loading ? Callout.Info("Loading datasets…") : new Fragment())
+               | (datasetsQuery.Loading ? Callout.Info("Завантаження датасетів…") : new Fragment())
 
                | new Card(
                    Layout.Vertical().Gap(2)
-                   | Text.H3("Import CSV")
-                   | Text.Muted("UTF-8: timestamp plus six numeric columns (same header as data/arlut_field.csv). Each import creates a fresh dataset.")
+                   | Text.H3("Імпорт CSV")
+                   | Text.Muted(
+                       "UTF-8: мітка часу та шість числових стовпців (той самий заголовок, що в data/arlut_field.csv). Кожен імпорт — новий датасет.")
 
                    | (Layout.Vertical().Gap(1)
-                       | Text.Block("Simulation").Bold()
-                       | Text.Muted("Type simulation — use in Hydroacoustic Comparison as the model branch.")
+                       | Text.Block("Симуляція").Bold()
+                       | Text.Muted(
+                           "Тип simulation — гілка моделі в «Гідроакустичному порівнянні».")
                        | simCsvUpload
                            .ToFileInput(simUpload)
-                           .Placeholder("Choose simulation .csv …")
-                       | new Button("Import simulation CSV")
+                           .Placeholder("Оберіть .csv симуляції…")
+                       | new Button("Імпортувати CSV симуляції")
                            .Primary()
                            .Disabled(busySimImport.Value || !simBytesReady)
                            .OnClick(async () => await ImportCsvBranchAsync(
@@ -123,12 +127,12 @@ public sealed class DatasetsManagementApp : ViewBase
                                () => simCsvUpload.Set(null))))
 
                    | (Layout.Vertical().Gap(1)
-                       | Text.Block("Field experiments").Bold()
-                       | Text.Muted("Type field — measurement branch for comparison.")
+                       | Text.Block("Польові експерименти").Bold()
+                       | Text.Muted("Тип field — гілка вимірів для порівняння.")
                        | fieldCsvUpload
                            .ToFileInput(fieldUpload)
-                           .Placeholder("Choose field .csv …")
-                       | new Button("Import field CSV")
+                           .Placeholder("Оберіть польовий .csv…")
+                       | new Button("Імпортувати польовий CSV")
                            .Primary()
                            .Disabled(busyFieldImport.Value || !fieldBytesReady)
                            .OnClick(async () => await ImportCsvBranchAsync(
@@ -140,8 +144,9 @@ public sealed class DatasetsManagementApp : ViewBase
                                status,
                                () => fieldCsvUpload.Set(null)))))
 
-               | Text.H3("Datasets")
-               | Text.Muted("Each card lists one dataset name. Delete removes it and linked comparison runs.")
+               | Text.H3("Датасети")
+               | Text.Muted(
+                   "Кожна картка — один датасет. Видалення прибирає його та пов’язані запуски порівняння.")
                | datasetsList
 
                | (string.IsNullOrWhiteSpace(status.Value) ? new Fragment() : Callout.Info(status.Value));
@@ -159,7 +164,7 @@ public sealed class DatasetsManagementApp : ViewBase
         var upload = fileState.Value;
         if (upload?.Content is not byte[] bytes || bytes.Length == 0)
         {
-            status.Set("Choose a CSV file first.");
+            status.Set("Спочатку оберіть CSV-файл.");
             return;
         }
 
@@ -186,13 +191,16 @@ public sealed class DatasetsManagementApp : ViewBase
             refreshTick.Set(refreshTick.Value + 1);
             clearFile();
 
+            var typeUa = string.Equals(datasetType, "simulation", StringComparison.OrdinalIgnoreCase)
+                ? "симуляція"
+                : "поле";
             status.Set(n == 0
-                ? $"Created '{created.Name}' but imported 0 rows — check CSV format."
-                : $"Imported {n} row(s) into '{created.Name}' ({datasetType}).");
+                ? $"Створено «{created.Name}», але імпортовано 0 рядків — перевірте формат CSV."
+                : $"Імпортовано {n} ряд. у «{created.Name}» ({typeUa}).");
         }
         catch (Exception ex)
         {
-            status.Set($"Import failed: {ex.Message}");
+            status.Set($"Помилка імпорту: {ex.Message}");
         }
         finally
         {
@@ -211,5 +219,4 @@ public sealed class DatasetsManagementApp : ViewBase
 
         return raw;
     }
-
 }

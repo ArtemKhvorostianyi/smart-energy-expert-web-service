@@ -5,19 +5,19 @@ namespace SmartEnergyExpert.Client.Apps;
 
 [App(
     icon: Icons.Waves,
-    title: "Environment simulation",
-    group: ["Datasets"],
-    searchHints: ["simulation", "synthetic", "parameter", "temperature", "salinity", "depth", "bottom", "noise", "model"])]
+    title: "Середовищна симуляція",
+    group: ["Датасети"],
+    searchHints: ["середовище", "симуляція", "синтетичні", "параметри", "температура", "солоність", "глибина", "шум", "модель"])]
 public sealed class EnvironmentSimulationApp : ViewBase
 {
     private const int SamplePageSize = 150;
     private const float TabularPreviewHeightFraction = 0.2f;
 
     private static string FieldAlignIndependentOption() =>
-        $"— Independent grid (duration & bands below) — [{Guid.Empty}]";
+        $"— Незалежна сітка (тривалість і смуги нижче) — [{Guid.Empty}]";
 
     private static string ToFieldMirrorOption(ClientServices.DatasetDto dataset) =>
-        $"{dataset.Name} | {dataset.SourceSystem} | {dataset.SampleCount} samples [{dataset.Id}]";
+        $"{dataset.Name} | {dataset.SourceSystem} | {dataset.SampleCount} зразків [{dataset.Id}]";
 
     private static Guid TryParseMirroredFieldId(string value)
     {
@@ -38,7 +38,7 @@ public sealed class EnvironmentSimulationApp : ViewBase
         var closeIndex = value.LastIndexOf(']');
         if (openIndex < 0 || closeIndex <= openIndex)
         {
-            throw new InvalidOperationException("Invalid dataset value.");
+            throw new InvalidOperationException("Невірне значення датасету.");
         }
 
         return Guid.Parse(value.Substring(openIndex + 1, closeIndex - openIndex - 1));
@@ -110,7 +110,7 @@ public sealed class EnvironmentSimulationApp : ViewBase
             TryParseMirroredFieldId(alignFieldSelection.Value) != Guid.Empty;
 
         object simulationTablePanel = generatedSimulationRows.Value.IsEmpty
-            ? Text.Muted("No datasets yet — generate one above.")
+            ? Text.Muted("Датасетів ще немає — згенеруйте один вище.")
             : BuildSessionSimulationsTable(generatedSimulationRows.Value);
 
         object sampleRowsPanel = BuildSampleRowsPanel(
@@ -119,37 +119,40 @@ public sealed class EnvironmentSimulationApp : ViewBase
             samplesOffset);
 
         return Layout.Vertical().Gap(2)
-               | Text.H2("Environment-based simulation")
+               | Text.H2("Симуляція на основі середовища")
                | Text.P(
-                   "Define water-column and seabed assumptions; the service writes a heuristic synthetic SPL series "
-                   + "(dataset type simulation). After you import measurements (including long ARLUT CSVs) as a field dataset "
-                   + "below, optionally mirror its timestamps and bands so Hydroacoustic Comparison lines up matching UTC × frequency rows.")
+                   "Задайте параметри водяного стовпа та ґрунту дна; сервіс будує евристичну синтетичну SPL-серію "
+                   + "(тип датасету simulation). Після імпорту вимірювань (зокрема довгих ARLUT CSV) як поле «field» нижче "
+                   + "за потреби віддзеркаліть його мітки часу та смуги частот — тоді в «Гідроакустичному порівнянні» узгодяться UTC × частота.")
 
                | new Card(
                    Layout.Vertical().Gap(1)
-                   | Text.H3("Environment")
-                   | simName.ToTextInput().Placeholder("Simulation name stem (unique suffix added if needed)")
-                   | Text.Muted("Mirror timestamps & bands from imported field dataset (optional)")
+                   | Text.H3("Середовище")
+                   | simName.ToTextInput().Placeholder("Базова назва симуляції (за потреби додається суфікс)")
+                   | Text.Muted("Віддзеркалити мітки часу та смуги з імпортованого поля (необов’язково)")
                    | alignFieldSelection.ToSelectInput(alignOptionsArray.ToArray())
                    | (mirrorsFieldDataset
                        ? Text.Muted(
-                           "Synthetic output has one sample per acoustic row in that field dataset; duration and frequency band list "
-                           + "below are ignored. SPL is replaced by the heuristic; geometry columns follow the measurements.")
+                           "На виході один зразок на акустичний ряд поля; тривалість і список смуг нижче ігноруються. "
+                           + "SPL замінюється евристикою; геометрія наслідує вимірювання.")
                        : new Fragment())
-                   | Text.Muted("Depth (m)")
+                   | Text.Muted("Глибина (м)")
                    | depthM.ToNumberInput(min: 1, max: 12_000)
-                   | Text.Muted("Temperature (°C)")
+                   | Text.Muted("Температура (°C)")
                    | temperatureC.ToNumberInput(min: -2, max: 40)
-                   | Text.Muted("Salinity (PSU)")
+                   | Text.Muted("Солоність (PSU)")
                    | salinityPsu.ToNumberInput(min: 0, max: 45)
-                   | Text.Muted("Noise floor (dB re 1 µPa, illustrative)")
+                   | Text.Muted("Шумова підкладка (дБ щодо 1 µPa, ілюстраційно)")
                    | noiseLevelDb.ToNumberInput(min: -120, max: -20)
-                   | Text.Muted("Bottom type")
+                   | Text.Muted(
+                       "Тип дна")
                    | bottomType.ToSelectInput(SimulationBottomTypes)
                    | Text.Muted(
-                       mirrorsFieldDataset ? "Duration (minutes) — not used while mirroring" : "Duration (minutes)")
+                       mirrorsFieldDataset
+                           ? "Тривалість (хв) — не використовується при віддзеркаленні поля"
+                           : "Тривалість (хв)")
                    | durationMin.ToNumberInput(min: 1, max: 240)
-                   | new Button("Generate simulation dataset").Primary().Disabled(busy.Value).OnClick(async () =>
+                   | new Button("Створити датасет симуляції").Primary().Disabled(busy.Value).OnClick(async () =>
                    {
                        busy.Set(true);
                        try
@@ -181,12 +184,12 @@ public sealed class EnvironmentSimulationApp : ViewBase
                            previewSamplesDatasetId.Set(ds.Id);
                            samplesOffset.Set(0);
                            status.Set(
-                               $"Done: '{ds.Name}' — {ds.SampleCount} samples · {ds.SourceSystem} · id {ds.Id}. "
-                               + "Pick it under Simulation in Hydroacoustic Comparison.");
+                               $"Готово: «{ds.Name}» — {ds.SampleCount} зразків, {ds.SourceSystem}, id {ds.Id}. "
+                               + "Оберіть його в «Гідроакустичному порівнянні» як Симуляцію.");
                        }
                        catch (Exception ex)
                        {
-                           status.Set($"Generation failed: {ex.Message}");
+                           status.Set($"Помилка генерації: {ex.Message}");
                        }
                        finally
                        {
@@ -196,18 +199,16 @@ public sealed class EnvironmentSimulationApp : ViewBase
 
                | new Card(
                    Layout.Vertical().Gap(1)
-                   | Text.H3("Session simulation datasets")
+                   | Text.H3("Датасети симуляції в цій сесії")
                    | Text.Muted(
-                       "Tabular overview of datasets produced in this Ivy session (Ivy Table widget). "
-                       + "See also https://docs.ivy.app/widgets/common/table.md and https://docs.ivy.app/widgets/advanced/data-table#datatable")
+                       "Табличний огляд датасетів у поточній сесії.")
                    | simulationTablePanel)
 
                | new Card(
                    Layout.Vertical().Gap(1)
-                   | Text.H3("Generated dataset — sample rows")
+                   | Text.H3("Створений датасет — перші рядки")
                    | Text.Muted(
-                       "Paged acoustic samples from the API (same fields as CSV import). "
-                       + "After each successful generation, the latest dataset is loaded here.")
+                       "Порціоновані акустичні зразки з API (ті самі поля, що CSV). Після успішної генерації тут показано останній датасет.")
                    | sampleRowsPanel)
 
                | (string.IsNullOrWhiteSpace(status.Value) ? new Fragment() : Callout.Info(status.Value));
@@ -220,7 +221,7 @@ public sealed class EnvironmentSimulationApp : ViewBase
     {
         if (previewDatasetId == Guid.Empty)
         {
-            return Text.Muted("Generate a dataset above to fetch and display its acoustic samples.");
+            return Text.Muted("Створіть датасет вище — тоді з’являться його акустичні зразки.");
         }
 
         if (samplesPageQuery.Loading)
@@ -236,25 +237,25 @@ public sealed class EnvironmentSimulationApp : ViewBase
         var page = samplesPageQuery.Value;
         if (page is null)
         {
-            return Text.Muted("No page data.");
+            return Text.Muted("Немає даних сторінки.");
         }
 
         if (page.Items.Length == 0)
         {
             return Text.Muted(page.TotalCount == 0
-                ? "This dataset has no acoustic samples."
-                : "No rows in this offset window — try Previous.");
+                ? "У цьому датасеті немає акустичних зразків."
+                : "У цьому вікні зміщення рядів немає — спробуйте «Назад».");
         }
 
         var showingEnd = Math.Min(page.Offset + page.Items.Length, page.TotalCount);
         return Layout.Vertical().Gap(1)
                | Text.Block(page.DatasetName).Bold()
-               | Text.Muted($"Rows {page.Offset + 1}–{showingEnd} of {page.TotalCount} (page size {SamplePageSize}).")
+               | Text.Muted($"Рядки {page.Offset + 1}–{showingEnd} з {page.TotalCount} (розмір сторінки {SamplePageSize}).")
                | (Layout.Horizontal().Gap(2)
-                   | new Button("Previous")
+                   | new Button("Назад")
                        .Disabled(page.Offset <= 0)
                        .OnClick(() => samplesOffsetState.Set(Math.Max(0, samplesOffsetState.Value - SamplePageSize)))
-                   | new Button("Next")
+                   | new Button("Далі")
                        .Disabled(showingEnd >= page.TotalCount)
                        .OnClick(() => samplesOffsetState.Set(samplesOffsetState.Value + SamplePageSize)))
                | BuildAcousticSamplesTable(page.Items);
@@ -283,13 +284,13 @@ public sealed class EnvironmentSimulationApp : ViewBase
             .ToArray();
 
         var grid = data.ToTable()
-            .Header(x => x.TimestampUtc, "Timestamp (UTC)")
-            .Header(x => x.FrequencyBandHz, "f (Hz)")
-            .Header(x => x.AmplitudeDb, "Amplitude (dB)")
-            .Header(x => x.DepthMeters, "Depth (m)")
-            .Header(x => x.RangeMeters, "Range (m)")
-            .Header(x => x.SoundSpeed, "Sound speed")
-            .Header(x => x.NoiseLevelDb, "Noise (dB)")
+            .Header(x => x.TimestampUtc, "Мітка часу (UTC)")
+            .Header(x => x.FrequencyBandHz, "f (Гц)")
+            .Header(x => x.AmplitudeDb, "Амплітуда (дБ)")
+            .Header(x => x.DepthMeters, "Глибина (м)")
+            .Header(x => x.RangeMeters, "Дальність (м)")
+            .Header(x => x.SoundSpeed, "Швидкість звуку")
+            .Header(x => x.NoiseLevelDb, "Шум (дБ)")
             .Width(Size.Full());
 
         return (Layout.Vertical()
@@ -302,13 +303,13 @@ public sealed class EnvironmentSimulationApp : ViewBase
     {
         var data = rows.OrderBy(r => r.Name).ToArray();
         var grid = data.ToTable()
-            .Header(r => r.Name, "Dataset")
-            .Header(r => r.SampleCount, "Samples")
-            .Header(r => r.SourceSystem, "Source")
-            .Header(r => r.Type, "Type")
-            .Header(r => r.Id, "Dataset id")
-            .Header(r => r.TimeRangeStart, "Period start")
-            .Header(r => r.TimeRangeEnd, "Period end")
+            .Header(r => r.Name, "Датасет")
+            .Header(r => r.SampleCount, "Зразків")
+            .Header(r => r.SourceSystem, "Джерело")
+            .Header(r => r.Type, "Тип")
+            .Header(r => r.Id, "ID датасету")
+            .Header(r => r.TimeRangeStart, "Початок періоду")
+            .Header(r => r.TimeRangeEnd, "Кінець періоду")
             .Width(Size.Full());
 
         return (Layout.Vertical()

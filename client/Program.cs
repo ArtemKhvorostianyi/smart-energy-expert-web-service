@@ -3,7 +3,7 @@ using SmartEnergyExpert.Client.Apps;
 using SmartEnergyExpert.Client.Services;
 
 var server = new Server();
-server.UseCulture("en-US");
+server.UseCulture("uk-UA");
 server.Services.AddSingleton<IApiClient, ApiClient>();
 server.AddAppsFromAssembly();
 server.AddConnectionsFromAssembly();
