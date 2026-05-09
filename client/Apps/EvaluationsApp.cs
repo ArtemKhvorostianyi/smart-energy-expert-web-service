@@ -162,7 +162,7 @@ public sealed class EvaluationsApp : ViewBase
                 return Layout.Vertical().Gap(1).Width(Size.Fraction(0.48f))
                        | Text.H4(role)
                        | Text.Block($"{o.Name} ({o.SourceSystem}) — no acoustic samples imported yet.")
-                       | Text.Muted("Upload/import CSV samples to populate explorer metrics.");
+                       | Text.Muted("Use Datasets management to import CSV samples and refresh this view.");
             }
 
             var durationText = o.DurationSeconds <= 0.0001m && o.SampleCount > 1

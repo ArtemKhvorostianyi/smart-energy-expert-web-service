@@ -146,6 +146,25 @@ public sealed class DatasetsController(AppDbContext dbContext) : ControllerBase
         });
     }
 
+    [HttpDelete("{datasetId:guid}")]
+    [Authorize(Roles = "Admin,Expert")]
+    public async Task<ActionResult> Delete(Guid datasetId, CancellationToken cancellationToken)
+    {
+        var dataset = await dbContext.Datasets.FirstOrDefaultAsync(x => x.Id == datasetId, cancellationToken);
+        if (dataset is null)
+        {
+            return NotFound("Dataset not found.");
+        }
+
+        var linkedRuns = await dbContext.ComparisonRuns
+            .Where(r => r.SimulationDatasetId == datasetId || r.FieldDatasetId == datasetId)
+            .ToListAsync(cancellationToken);
+        dbContext.ComparisonRuns.RemoveRange(linkedRuns);
+        dbContext.Datasets.Remove(dataset);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return NoContent();
+    }
+
     [HttpPost("{datasetId:guid}/samples")]
     [Authorize(Roles = "Admin,Expert")]
     public async Task<ActionResult> AddSample(Guid datasetId, [FromBody] AddAcousticSampleRequest request, CancellationToken cancellationToken)

@@ -11,6 +11,7 @@ public interface IApiClient
     Task<IReadOnlyList<DatasetDto>> GetDatasetsAsync(CancellationToken cancellationToken = default);
     Task<DatasetSignalOverviewDto?> GetDatasetSignalOverviewAsync(Guid datasetId, CancellationToken cancellationToken = default);
     Task<DatasetDto> CreateDatasetAsync(CreateDatasetRequestDto request, CancellationToken cancellationToken = default);
+    Task DeleteDatasetAsync(Guid datasetId, CancellationToken cancellationToken = default);
     Task<int> ImportCsvSamplesAsync(Guid datasetId, string csvContent, CancellationToken cancellationToken = default);
     Task<int> ImportCsvFileAsync(Guid datasetId, string filePath, CancellationToken cancellationToken = default);
     Task<ComparisonResultDto> RunComparisonAsync(CreateComparisonRequestDto request, CancellationToken cancellationToken = default);
@@ -59,6 +60,13 @@ public sealed class ApiClient : IApiClient
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<DatasetDto>(JsonOptions, cancellationToken)
                ?? throw new InvalidOperationException("Create dataset response payload is empty.");
+    }
+
+    public async Task DeleteDatasetAsync(Guid datasetId, CancellationToken cancellationToken = default)
+    {
+        await EnsureBackendAuthorizedAsync(cancellationToken);
+        var response = await _httpClient.DeleteAsync($"api/datasets/{datasetId}", cancellationToken);
+        response.EnsureSuccessStatusCode();
     }
 
     public async Task<int> ImportCsvSamplesAsync(Guid datasetId, string csvContent, CancellationToken cancellationToken = default)
