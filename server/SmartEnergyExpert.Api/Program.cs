@@ -7,6 +7,12 @@ using SmartEnergyExpert.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Sliplane резервує PORT і б’є healthcheck у http://localhost:$PORT/ (див. їхні docs).
+// Якщо слухати лише ASPNETCORE_URLS=8080, а PORT інший — перевірка не доходить до Kestrel.
+var platformPort = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrWhiteSpace(platformPort))
+    builder.WebHost.UseUrls($"http://+:{platformPort}");
+
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
