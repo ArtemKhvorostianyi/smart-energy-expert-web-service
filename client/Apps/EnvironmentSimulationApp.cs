@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using ClientServices = SmartEnergyExpert.Client.Services;
 
 namespace SmartEnergyExpert.Client.Apps;
@@ -9,14 +10,28 @@ namespace SmartEnergyExpert.Client.Apps;
     searchHints: ["simulation", "synthetic", "parameter", "temperature", "salinity", "depth", "bottom", "noise", "model"])]
 public sealed class EnvironmentSimulationApp : ViewBase
 {
+    private const int SamplePageSize = 150;
+
     private static readonly string[] SimulationBottomTypes =
         ["sand", "mud", "silt", "clay_mud", "hard_rock", "rock", "granite"];
+
+    private sealed record SimulatedDatasetGridRow(
+        Guid Id,
+        string Name,
+        string Type,
+        string SourceSystem,
+        int SampleCount,
+        DateTimeOffset TimeRangeStart,
+        DateTimeOffset TimeRangeEnd);
 
     public override object? Build()
     {
         var api = UseService<ClientServices.IApiClient>();
         var status = UseState("");
         var busy = UseState(false);
+        var generatedSimulationRows = UseState(ImmutableArray<SimulatedDatasetGridRow>.Empty);
+        var previewSamplesDatasetId = UseState(Guid.Empty);
+        var samplesOffset = UseState(0);
 
         var simName = UseState("parameter-simulation");
         var depthM = UseState(60m);
@@ -26,7 +41,30 @@ public sealed class EnvironmentSimulationApp : ViewBase
         var bottomType = UseState("sand");
         var durationMin = UseState(60m);
 
-        var lastDatasetId = UseState<Guid?>(null);
+        var samplesPageQuery = UseQuery(
+            key: ("env-sim-samples", previewSamplesDatasetId.Value, samplesOffset.Value),
+            fetcher: async ct =>
+            {
+                if (previewSamplesDatasetId.Value == Guid.Empty)
+                {
+                    return (ClientServices.DatasetSamplesPageDto?)null;
+                }
+
+                return await api.GetDatasetSamplesPageAsync(
+                    previewSamplesDatasetId.Value,
+                    samplesOffset.Value,
+                    SamplePageSize,
+                    ct);
+            });
+
+        object simulationTablePanel = generatedSimulationRows.Value.IsEmpty
+            ? Text.Muted("No datasets yet — generate one above.")
+            : BuildSessionSimulationsTable(generatedSimulationRows.Value);
+
+        object sampleRowsPanel = BuildSampleRowsPanel(
+            samplesPageQuery,
+            previewSamplesDatasetId.Value,
+            samplesOffset);
 
         return Layout.Vertical().Gap(2)
                | Text.H2("Environment-based simulation")
@@ -68,7 +106,16 @@ public sealed class EnvironmentSimulationApp : ViewBase
                                DurationMinutes = (int)decimal.Round(decimal.Clamp(durationMin.Value, 1, 240))
                            };
                            var ds = await api.GenerateSimulationDatasetAsync(dto);
-                           lastDatasetId.Set(ds.Id);
+                           generatedSimulationRows.Set(generatedSimulationRows.Value.Add(new SimulatedDatasetGridRow(
+                               ds.Id,
+                               ds.Name,
+                               ds.Type,
+                               ds.SourceSystem,
+                               ds.SampleCount,
+                               ds.TimeRangeStart,
+                               ds.TimeRangeEnd)));
+                           previewSamplesDatasetId.Set(ds.Id);
+                           samplesOffset.Set(0);
                            status.Set(
                                $"Done: '{ds.Name}' — {ds.SampleCount} samples · {ds.SourceSystem} · id {ds.Id}. "
                                + "Pick it under Simulation in Hydroacoustic Comparison.");
@@ -83,10 +130,123 @@ public sealed class EnvironmentSimulationApp : ViewBase
                        }
                    }))
 
-               | (lastDatasetId.Value is { } gid
-                   ? Callout.Info($"Last created dataset id for reference: {gid}")
-                   : new Fragment())
+               | new Card(
+                   Layout.Vertical().Gap(1)
+                   | Text.H3("Session simulation datasets")
+                   | Text.Muted(
+                       "Tabular overview of datasets produced in this Ivy session (Ivy Table widget). "
+                       + "See also https://docs.ivy.app/widgets/common/table.md and https://docs.ivy.app/widgets/advanced/data-table#datatable")
+                   | simulationTablePanel)
+
+               | new Card(
+                   Layout.Vertical().Gap(1)
+                   | Text.H3("Generated dataset — sample rows")
+                   | Text.Muted(
+                       "Paged acoustic samples from the API (same fields as CSV import). "
+                       + "After each successful generation, the latest dataset is loaded here.")
+                   | sampleRowsPanel)
 
                | (string.IsNullOrWhiteSpace(status.Value) ? new Fragment() : Callout.Info(status.Value));
+    }
+
+    private object BuildSampleRowsPanel(
+        QueryResult<ClientServices.DatasetSamplesPageDto?> samplesPageQuery,
+        Guid previewDatasetId,
+        IState<int> samplesOffsetState)
+    {
+        if (previewDatasetId == Guid.Empty)
+        {
+            return Text.Muted("Generate a dataset above to fetch and display its acoustic samples.");
+        }
+
+        if (samplesPageQuery.Loading)
+        {
+            return Skeleton.Card();
+        }
+
+        if (samplesPageQuery.Error is { } err)
+        {
+            return Callout.Warning(err.Message);
+        }
+
+        var page = samplesPageQuery.Value;
+        if (page is null)
+        {
+            return Text.Muted("No page data.");
+        }
+
+        if (page.Items.Length == 0)
+        {
+            return Text.Muted(page.TotalCount == 0
+                ? "This dataset has no acoustic samples."
+                : "No rows in this offset window — try Previous.");
+        }
+
+        var showingEnd = Math.Min(page.Offset + page.Items.Length, page.TotalCount);
+        return Layout.Vertical().Gap(1)
+               | Text.Block(page.DatasetName).Bold()
+               | Text.Muted($"Rows {page.Offset + 1}–{showingEnd} of {page.TotalCount} (page size {SamplePageSize}).")
+               | (Layout.Horizontal().Gap(2)
+                   | new Button("Previous")
+                       .Disabled(page.Offset <= 0)
+                       .OnClick(() => samplesOffsetState.Set(Math.Max(0, samplesOffsetState.Value - SamplePageSize)))
+                   | new Button("Next")
+                       .Disabled(showingEnd >= page.TotalCount)
+                       .OnClick(() => samplesOffsetState.Set(samplesOffsetState.Value + SamplePageSize)))
+               | BuildAcousticSamplesTable(page.Items);
+    }
+
+    private static Table BuildAcousticSamplesTable(IReadOnlyList<ClientServices.AcousticSampleRowDto> rows)
+    {
+        var header = new TableRow(
+            new TableCell(Text.Block("Timestamp (UTC)").Bold()),
+            new TableCell(Text.Block("f (Hz)").Bold()),
+            new TableCell(Text.Block("Amplitude (dB)").Bold()),
+            new TableCell(Text.Block("Depth (m)").Bold()),
+            new TableCell(Text.Block("Range (m)").Bold()),
+            new TableCell(Text.Block("Sound speed").Bold()),
+            new TableCell(Text.Block("Noise (dB)").Bold()));
+
+        var table = new Table(header);
+        foreach (var r in rows)
+        {
+            table |= new TableRow(
+                new TableCell(Text.Block(r.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"))),
+                new TableCell(Text.Block(r.FrequencyBand.ToString("G29"))),
+                new TableCell(Text.Block(r.AmplitudeDb.ToString("F2"))),
+                new TableCell(Text.Block(r.DepthMeters.ToString("F2"))),
+                new TableCell(Text.Block(r.RangeMeters.ToString("F1"))),
+                new TableCell(Text.Block(r.SoundSpeed?.ToString("F2") ?? "—")),
+                new TableCell(Text.Block(r.NoiseLevelDb?.ToString("F2") ?? "—")));
+        }
+
+        return table;
+    }
+
+    private static Table BuildSessionSimulationsTable(ImmutableArray<SimulatedDatasetGridRow> rows)
+    {
+        var header = new TableRow(
+            new TableCell(Text.Block("Dataset").Bold()),
+            new TableCell(Text.Block("Samples").Bold()),
+            new TableCell(Text.Block("Source").Bold()),
+            new TableCell(Text.Block("Type").Bold()),
+            new TableCell(Text.Block("Dataset id").Bold()),
+            new TableCell(Text.Block("Period start").Bold()),
+            new TableCell(Text.Block("Period end").Bold()));
+
+        var table = new Table(header);
+        foreach (var r in rows)
+        {
+            table |= new TableRow(
+                new TableCell(Text.Block(r.Name)),
+                new TableCell(Text.Block(r.SampleCount.ToString())),
+                new TableCell(Text.Block(r.SourceSystem)),
+                new TableCell(Text.Block(r.Type)),
+                new TableCell(Text.Block(r.Id.ToString())),
+                new TableCell(Text.Block(r.TimeRangeStart.ToString("yyyy-MM-dd HH:mm"))),
+                new TableCell(Text.Block(r.TimeRangeEnd.ToString("yyyy-MM-dd HH:mm"))));
+        }
+
+        return table;
     }
 }

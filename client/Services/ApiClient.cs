@@ -10,6 +10,11 @@ public interface IApiClient
 {
     Task<IReadOnlyList<DatasetDto>> GetDatasetsAsync(CancellationToken cancellationToken = default);
     Task<DatasetSignalOverviewDto?> GetDatasetSignalOverviewAsync(Guid datasetId, CancellationToken cancellationToken = default);
+    Task<DatasetSamplesPageDto?> GetDatasetSamplesPageAsync(
+        Guid datasetId,
+        int offset = 0,
+        int limit = 200,
+        CancellationToken cancellationToken = default);
     Task<DatasetDto> CreateDatasetAsync(CreateDatasetRequestDto request, CancellationToken cancellationToken = default);
     Task<DatasetDto> GenerateSimulationDatasetAsync(
         GenerateSimulationDatasetRequestDto request,
@@ -54,6 +59,17 @@ public sealed class ApiClient : IApiClient
             $"api/datasets/{datasetId}/overview",
             JsonOptions,
             cancellationToken);
+    }
+
+    public async Task<DatasetSamplesPageDto?> GetDatasetSamplesPageAsync(
+        Guid datasetId,
+        int offset = 0,
+        int limit = 200,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureBackendAuthorizedAsync(cancellationToken);
+        var uri = $"api/datasets/{datasetId}/samples?offset={offset}&limit={limit}";
+        return await _httpClient.GetFromJsonAsync<DatasetSamplesPageDto>(uri, JsonOptions, cancellationToken);
     }
 
     public async Task<DatasetDto> CreateDatasetAsync(CreateDatasetRequestDto request, CancellationToken cancellationToken = default)

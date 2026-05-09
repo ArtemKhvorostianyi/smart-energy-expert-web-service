@@ -33,6 +33,27 @@ public sealed class DatasetSignalOverviewResponse
     public decimal? MeanNoiseLevelDb { get; init; }
 }
 
+public sealed class AcousticSampleRowResponse
+{
+    public DateTimeOffset Timestamp { get; init; }
+    public decimal FrequencyBand { get; init; }
+    public decimal AmplitudeDb { get; init; }
+    public decimal DepthMeters { get; init; }
+    public decimal RangeMeters { get; init; }
+    public decimal? SoundSpeed { get; init; }
+    public decimal? NoiseLevelDb { get; init; }
+}
+
+public sealed class DatasetSamplesPageResponse
+{
+    public Guid DatasetId { get; init; }
+    public string DatasetName { get; init; } = string.Empty;
+    public int TotalCount { get; init; }
+    public int Offset { get; init; }
+    public int Limit { get; init; }
+    public IReadOnlyList<AcousticSampleRowResponse> Items { get; init; } = [];
+}
+
 public sealed class CreateDatasetRequest
 {
     public string Name { get; init; } = string.Empty;

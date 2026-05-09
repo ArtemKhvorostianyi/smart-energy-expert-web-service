@@ -113,6 +113,54 @@ public sealed class DatasetsController(AppDbContext dbContext) : ControllerBase
         });
     }
 
+    [HttpGet("{datasetId:guid}/samples")]
+    public async Task<ActionResult<DatasetSamplesPageResponse>> GetSamplesPage(
+        Guid datasetId,
+        [FromQuery] int offset = 0,
+        [FromQuery] int limit = 200,
+        CancellationToken cancellationToken = default)
+    {
+        var dataset = await dbContext.Datasets.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == datasetId, cancellationToken);
+        if (dataset is null)
+        {
+            return NotFound("Dataset not found.");
+        }
+
+        var take = Math.Clamp(limit, 1, 2_000);
+        var skip = Math.Max(0, offset);
+
+        var total = await dbContext.AcousticSamples.AsNoTracking()
+            .CountAsync(x => x.DatasetId == datasetId, cancellationToken);
+
+        var items = await dbContext.AcousticSamples.AsNoTracking()
+            .Where(x => x.DatasetId == datasetId)
+            .OrderBy(x => x.Timestamp).ThenBy(x => x.FrequencyBand)
+            .Skip(skip)
+            .Take(take)
+            .Select(x => new AcousticSampleRowResponse
+            {
+                Timestamp = x.Timestamp,
+                FrequencyBand = x.FrequencyBand,
+                AmplitudeDb = x.AmplitudeDb,
+                DepthMeters = x.DepthMeters,
+                RangeMeters = x.RangeMeters,
+                SoundSpeed = x.SoundSpeed,
+                NoiseLevelDb = x.NoiseLevelDb
+            })
+            .ToListAsync(cancellationToken);
+
+        return Ok(new DatasetSamplesPageResponse
+        {
+            DatasetId = dataset.Id,
+            DatasetName = dataset.Name,
+            TotalCount = total,
+            Offset = skip,
+            Limit = take,
+            Items = items
+        });
+    }
+
     [HttpPost]
     [Authorize(Roles = "Admin,Expert")]
     public async Task<ActionResult<DatasetResponse>> Create([FromBody] CreateDatasetRequest request, CancellationToken cancellationToken)

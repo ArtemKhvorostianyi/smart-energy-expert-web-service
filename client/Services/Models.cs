@@ -95,6 +95,51 @@ public sealed class DatasetSignalOverviewDto
     public decimal? MeanNoiseLevelDb { get; init; }
 }
 
+public sealed class AcousticSampleRowDto
+{
+    [JsonPropertyName("timestamp")]
+    public DateTimeOffset Timestamp { get; init; }
+
+    [JsonPropertyName("frequencyBand")]
+    public decimal FrequencyBand { get; init; }
+
+    [JsonPropertyName("amplitudeDb")]
+    public decimal AmplitudeDb { get; init; }
+
+    [JsonPropertyName("depthMeters")]
+    public decimal DepthMeters { get; init; }
+
+    [JsonPropertyName("rangeMeters")]
+    public decimal RangeMeters { get; init; }
+
+    [JsonPropertyName("soundSpeed")]
+    public decimal? SoundSpeed { get; init; }
+
+    [JsonPropertyName("noiseLevelDb")]
+    public decimal? NoiseLevelDb { get; init; }
+}
+
+public sealed class DatasetSamplesPageDto
+{
+    [JsonPropertyName("datasetId")]
+    public Guid DatasetId { get; init; }
+
+    [JsonPropertyName("datasetName")]
+    public string DatasetName { get; init; } = string.Empty;
+
+    [JsonPropertyName("totalCount")]
+    public int TotalCount { get; init; }
+
+    [JsonPropertyName("offset")]
+    public int Offset { get; init; }
+
+    [JsonPropertyName("limit")]
+    public int Limit { get; init; }
+
+    [JsonPropertyName("items")]
+    public AcousticSampleRowDto[] Items { get; init; } = [];
+}
+
 public sealed class CreateComparisonRequestDto
 {
     [JsonPropertyName("simulationDatasetId")]
