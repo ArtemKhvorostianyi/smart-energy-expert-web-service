@@ -142,7 +142,15 @@ public sealed class EvaluationsApp : ViewBase
                            }))
                        | (datasetsQuery.Error is { } e ? Callout.Warning(e.Message) : new Fragment())
                        | (string.IsNullOrWhiteSpace(status.Value) ? new Fragment() : Callout.Info(status.Value))
-                       | (result.Value is null ? new Fragment() : new ComparisonResultsSection(result.Value, OpenChartsBlade));
+                       | (result.Value is null
+                           ? new Fragment()
+                           : new ComparisonResultsSection(
+                               result.Value,
+                               OpenChartsBlade,
+                               selectedSimulation.Value,
+                               selectedField.Value,
+                               simulationExplorerQuery.Value,
+                               fieldExplorerQuery.Value));
         }
 
         private static object BuildSignalExplorerCard(
@@ -254,7 +262,13 @@ public sealed class EvaluationsApp : ViewBase
                        : Text.Block($"Шумові телеметрії у записах (сер.): {o.MeanNoiseLevelDb.Value:F2} дБ"));
         }
 
-        private sealed class ComparisonResultsSection(ClientServices.ComparisonResultDto result, Action openChartsBlade) : ViewBase
+        private sealed class ComparisonResultsSection(
+            ClientServices.ComparisonResultDto result,
+            Action openChartsBlade,
+            string simulationSelectionLabel,
+            string fieldSelectionLabel,
+            ClientServices.DatasetSignalOverviewDto? simulationOverview,
+            ClientServices.DatasetSignalOverviewDto? fieldOverview) : ViewBase
         {
             public override object? Build()
             {
@@ -317,7 +331,12 @@ public sealed class EvaluationsApp : ViewBase
                                .OnClick(_ => openMetricsSheet())
                            | new Button("Відкрити графіки")
                                .OnClick(_ => openChartsBlade())
-                           | new ComparisonPdfDownloadView(result))
+                           | new ComparisonPdfDownloadView(new ComparisonReportPdfInput(
+                               result,
+                               simulationSelectionLabel,
+                               fieldSelectionLabel,
+                               simulationOverview,
+                               fieldOverview)))
                        | mismatchSheetView
                        | metricsSheetView;
             }

@@ -1,13 +1,23 @@
 using QuestPDF.Fluent;
+using QuestPDF.Infrastructure;
 using SmartEnergyExpert.Client.Services;
 
 namespace SmartEnergyExpert.Client.Reporting;
 
+/// <summary>Вхідні дані для PDF: результат порівняння та контекст вибраних датасетів з UI.</summary>
+public sealed record ComparisonReportPdfInput(
+    ComparisonResultDto Result,
+    string SimulationSelectionLabel,
+    string FieldSelectionLabel,
+    DatasetSignalOverviewDto? SimulationOverview,
+    DatasetSignalOverviewDto? FieldOverview);
+
 /// <summary>PDF-звіт з результатів одного запуску порівняння (українські підписи).</summary>
 public static class ComparisonReportPdf
 {
-    public static byte[] Build(ComparisonResultDto r)
+    public static byte[] Build(ComparisonReportPdfInput input)
     {
+        var r = input.Result;
         return Document.Create(container =>
         {
             container.Page(page =>
@@ -32,6 +42,35 @@ public static class ComparisonReportPdf
                         main.Item().Text(
                             "Спаровування: застосовано вирівнювання за прогресом експерименту (нормалізована частка часу u).");
                     }
+
+                    main.Item().LineHorizontal(0.5f).LineColor(QuestPDF.Helpers.Colors.Grey.Lighten2);
+
+                    main.Item().Text("Порівнювані датасети").SemiBold().FontSize(12);
+                    main.Item().Column(ds =>
+                    {
+                        ds.Spacing(6);
+                        ds.Item().Text("Симуляція (модель)").SemiBold();
+                        ds.Item().Text(SelectionLine(input.SimulationSelectionLabel)).FontSize(9);
+                        AppendDatasetMetaLine(ds, input.SimulationOverview);
+                        ds.Item().Text("Поле (вимір)").SemiBold();
+                        ds.Item().Text(SelectionLine(input.FieldSelectionLabel)).FontSize(9);
+                        AppendDatasetMetaLine(ds, input.FieldOverview);
+                    });
+
+                    main.Item().LineHorizontal(0.5f).LineColor(QuestPDF.Helpers.Colors.Grey.Lighten2);
+
+                    main.Item().Text("Огляд сигналу").SemiBold().FontSize(12);
+                    main.Item().Text(
+                            "Ті самі показники, що в картці «Огляд сигналу» на екрані порівняння (за наявності завантажених даних).")
+                        .FontSize(9).FontColor(QuestPDF.Helpers.Colors.Grey.Darken1);
+                    main.Item().Row(row =>
+                    {
+                        row.Spacing(10);
+                        row.RelativeItem().Border(1).BorderColor(QuestPDF.Helpers.Colors.Grey.Lighten2).Padding(8)
+                            .Column(OverviewColumn("Симуляція (модель)", input.SimulationOverview));
+                        row.RelativeItem().Border(1).BorderColor(QuestPDF.Helpers.Colors.Grey.Lighten2).Padding(8)
+                            .Column(OverviewColumn("Поле (вимір)", input.FieldOverview));
+                    });
 
                     main.Item().LineHorizontal(0.5f).LineColor(QuestPDF.Helpers.Colors.Grey.Lighten2);
 
@@ -189,6 +228,92 @@ public static class ComparisonReportPdf
                     });
             });
         }).GeneratePdf();
+    }
+
+    private static string SelectionLine(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "—" : value.Trim();
+
+    private static void AppendDatasetMetaLine(ColumnDescriptor col, DatasetSignalOverviewDto? o)
+    {
+        if (o is null)
+        {
+            return;
+        }
+
+        col.Item().Text($"Тип: {o.Type}, UUID: {o.DatasetId:N}").FontSize(9)
+            .FontColor(QuestPDF.Helpers.Colors.Grey.Darken1);
+    }
+
+    private static Action<ColumnDescriptor> OverviewColumn(string title, DatasetSignalOverviewDto? o) =>
+        col =>
+        {
+            col.Spacing(4);
+            col.Item().Text(title).SemiBold().FontSize(11);
+            foreach (var line in GetOverviewLines(o))
+            {
+                col.Item().Text(line);
+            }
+        };
+
+    private static IReadOnlyList<string> GetOverviewLines(DatasetSignalOverviewDto? o)
+    {
+        if (o is null)
+        {
+            return
+            [
+                "Огляд недоступний: дані ще не завантажено. Відкрийте «Гідроакустичне порівняння», дочекайтесь "
+                + "завантаження картки огляду й знову збережіть PDF."
+            ];
+        }
+
+        if (o.SampleCount == 0)
+        {
+            return
+            [
+                $"{o.Name} ({o.SourceSystem}) — акустичні зразки ще не імпортовано.",
+                "Завантажте CSV у «Керування датасетами» та оновіть вибір."
+            ];
+        }
+
+        var durationText = o.DurationSeconds <= 0.0001m && o.SampleCount > 1
+            ? $"{o.SampleCount} зразків на спільних мітках часу."
+            : $"{o.SampleCount} зразків за {FormatDurationHuman(o.DurationSeconds)}.";
+
+        var noiseLine = o.MeanNoiseLevelDb is null
+            ? "Стовпчик рівню шуму відсутній або порожній."
+            : $"Шумові телеметрії у записах (сер.): {o.MeanNoiseLevelDb.Value:F2} дБ";
+
+        return
+        [
+            o.Name,
+            durationText,
+            $"Діапазон частот: {FormatFrequencyRangeSummary(o.FrequencyMinHz, o.FrequencyMaxHz)} "
+            + $"({o.DistinctFrequencyBins} різних смуг)",
+            $"Пікова амплітуда: {o.PeakAmplitudeDb:F2} дБ",
+            $"Шумова підкладка (≈10-й процентиль амплітуди): {o.NoiseFloorDb:F2} дБ, середній рівень: {o.MeanAmplitudeDb:F2} дБ",
+            noiseLine
+        ];
+    }
+
+    private static string FormatFrequencyHz(decimal hz) =>
+        hz >= 1000m ? $"{hz / 1000m:N1} кГц" : $"{hz:N0} Гц";
+
+    private static string FormatFrequencyRangeSummary(decimal minHz, decimal maxHz) =>
+        $"{FormatFrequencyHz(minHz)} – {FormatFrequencyHz(maxHz)}";
+
+    private static string FormatDurationHuman(decimal seconds)
+    {
+        if (seconds >= 7200)
+        {
+            return $"{seconds / 3600m:N1} год";
+        }
+
+        if (seconds >= 120)
+        {
+            return $"{seconds / 60m:N1} хв";
+        }
+
+        return $"{seconds:N3} с";
     }
 
     private static string RecConfidenceText(RecommendationDto rec) =>
