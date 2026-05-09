@@ -17,5 +17,6 @@ ivy run --browse
 
 ## Backend assumptions
 
-- API URL: `http://localhost:5109/`
-- Login credentials (seeded): `admin@smartenergy.local` / `Admin123!`
+- За замовчуванням API: `http://localhost:5109/` (`client/appsettings.json`).
+- Прод API: див. **Deploy (Sliplane: API у контейнері, Ivy локально)** у кореневому `README.md` — `dotnet user-secrets` для `BackendApi:BaseUrl` / Email / Password або змінні `BackendApi__*`.
+- Логін після сидів (як у `appsettings.json`): `admin@smartenergy.local` / `Admin123!` (інші ролі — у `DatabaseInitializer`).
