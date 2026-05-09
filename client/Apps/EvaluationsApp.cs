@@ -127,7 +127,7 @@ public sealed class EvaluationsApp : ViewBase
                            }))
                        | (datasetsQuery.Error is { } e ? Callout.Warning(e.Message) : new Fragment())
                        | (string.IsNullOrWhiteSpace(status.Value) ? new Fragment() : Callout.Info(status.Value))
-                       | (result.Value is null ? new Fragment() : BuildResultCards(result.Value));
+                       | (result.Value is null ? new Fragment() : new ComparisonResultsSection(result.Value));
         }
 
         private static object BuildSignalExplorerCard(
@@ -239,64 +239,135 @@ public sealed class EvaluationsApp : ViewBase
                        : Text.Block($"Recorded noise telemetry (avg): {o.MeanNoiseLevelDb.Value:F2} dB"));
         }
 
-        private static object BuildResultCards(ClientServices.ComparisonResultDto result)
+        private sealed class ComparisonResultsSection(ClientServices.ComparisonResultDto result) : ViewBase
         {
-            var recommendationsStack = Layout.Vertical().Gap(2);
-            foreach (var rec in result.Recommendations)
+            public override object? Build()
             {
-                recommendationsStack |= BuildRecommendationCard(rec);
-            }
+                var (mismatchSheetView, openMismatchSheet) = UseTrigger((IState<bool> isOpen) =>
+                    isOpen.Value
+                        ? new Sheet(
+                            _ => isOpen.Set(false),
+                            Layout.Vertical().Gap(3)
+                            | BuildTemporalClustersBlock(result)
+                            | BuildTopDifferencesBlock(result),
+                            title: "Temporal clusters & top differences",
+                            description: "Burst clusters and ranked outlier samples for this comparison run.")
+                            .Width(Size.Fraction(2f / 3f))
+                        : null);
 
-            return Layout.Vertical().Gap(2)
-                   | new Card(
-                       Layout.Vertical()
-                       | Text.H3("Quick Summary")
-                       | Text.Block(result.TotalComparedPoints == 0
-                           ? "No paired samples after band scaling (10^n Hz), UTC nearest-match, and experiment-progress pairing (matching normalized elapsed share u per dataset). Check alignable bands and non-empty spans; see recommendations."
-                           : result.SignificantDifferenceCount == 0
-                               ? "Model matches field data well for this run (on paired points only)."
-                               : "Model needs tuning for part of the compared points.")
-                       | (result.TotalComparedPoints > 0 && result.TimelineNormalizationApplied
-                           ? Text.Muted(
-                               "Pairs used automatic experiment-progress alignment: each CSV’s timestamps were mapped to u∈[0,1] by its own first/last sample, then aligned by closest u across alignable bands (no shared UTC required). Prefer identical UTC/elapsed-second baselines when you need strict traceability.")
-                           : Layout.Horizontal()))
-                   | new Card(
-                       Layout.Vertical()
-                       | Text.H3("Metrics")
-                       | (result.TotalComparedPoints == 0
-                           ? Layout.Vertical().Gap(1)
-                             | Callout.Warning(
-                                 "Compared points: 0 — tries exact row, then band-scaled UTC nearest (skew cap), then experiment-progress pairing (min |u_sim−u_field|). MAE / RMSE / MRE / P95 are omitted until at least one pair exists.")
-                             | Text.Muted(
-                                 "When datasets align, LOW < 2%; MODERATE 2–5%; HIGH 5–10%; CRITICAL > 10% relative amplitude error.")
-                           : Layout.Vertical().Gap(1)
-                             | Text.Block($"MAE: {result.Mae:F3}")
-                             | Text.Block($"RMSE: {result.Rmse:F3}")
-                             | Text.Block($"MRE: {result.MeanRelativeErrorPercent:F2}%")
-                             | Text.Block($"P95: {result.P95AbsoluteError:F3}")
-                             | Text.Block($"Significant points: {result.SignificantDifferenceCount}/{result.TotalComparedPoints}")
-                             | Text.Muted(
-                                 "Severity buckets use relative amplitude error (%): LOW < 2%; MODERATE 2–5%; HIGH 5–10%; CRITICAL > 10%.")))
-                   | new Card(
-                       Layout.Vertical()
-                       | Text.H3("Temporal clusters (Top mismatches)")
-                       | (result.TemporalClusters.Length == 0
-                           ? Text.Muted("Clusters appear when bursts of samples share the same band and timestamps within ~75ms.")
-                           : new List(result.TemporalClusters.Select(c =>
-                               new ListItem(
-                                   $"Cluster #{c.Ordinal}: {c.TimeStart:HH:mm:ss.fff}–{c.TimeEnd:HH:mm:ss.fff} | {c.FrequencyBand}Hz | "
-                                   + $"n={c.PointCount}, mean rel err {c.MeanRelativeErrorPercent:F1}%")))))
-                   | new Card(
-                       Layout.Vertical()
-                       | Text.H3("Top Differences")
-                       | new List(result.TopDifferences.Take(12).Select(x =>
-                           new ListItem($"{x.Timestamp:HH:mm:ss.fff} | {x.FrequencyBand}Hz | rel={x.RelativeErrorPercent:F1}% | {x.Severity.ToUpperInvariant()}"))))
-                   | new Card(
-                       Layout.Vertical()
-                       | Text.H3("Decision support (recommendations)")
-                       | Text.Muted("Each finding is a rule-engine hypothesis with explicit evidence — not an ML black box.")
-                       | recommendationsStack);
+                var (metricsSheetView, openMetricsSheet) = UseTrigger((IState<bool> isOpen) =>
+                    isOpen.Value
+                        ? new Sheet(
+                            _ => isOpen.Set(false),
+                            BuildMetricsSheetBody(result),
+                            title: "Metrics",
+                            description: "Residual statistics for paired simulation vs field samples and how to interpret them.")
+                            .Width(Size.Fraction(2f / 3f))
+                        : null);
+
+                var recommendationsStack = Layout.Vertical().Gap(2);
+                foreach (var rec in result.Recommendations)
+                {
+                    recommendationsStack |= BuildRecommendationCard(rec);
+                }
+
+                var timelineNote = result.TotalComparedPoints > 0 && result.TimelineNormalizationApplied
+                    ? Text.Muted(
+                        "Pairs used automatic experiment-progress alignment: each CSV’s timestamps were mapped to u∈[0,1] by its own first/last sample, then aligned by closest u across alignable bands (no shared UTC required). Prefer identical UTC/elapsed-second baselines when you need strict traceability.")
+                    : (object)new Fragment();
+
+                return Layout.Vertical().Gap(2)
+                       | new Card(
+                           Layout.Vertical().Gap(2)
+                           | Text.H3("Quick Summary")
+                           | Text.Block(result.TotalComparedPoints == 0
+                               ? "No paired samples after band scaling (10^n Hz), UTC nearest-match, and experiment-progress pairing (matching normalized elapsed share u per dataset). Check alignable bands and non-empty spans; see findings below."
+                               : result.SignificantDifferenceCount == 0
+                                   ? "Model matches field data well for this run (on paired points only)."
+                                   : "Model needs tuning for part of the compared points.")
+                           | timelineNote
+                           | Text.H4("Decision support (recommendations)")
+                           | Text.Muted(
+                               "Each finding is a rule-engine hypothesis with explicit evidence — not an ML black box.")
+                           | Text.Muted(
+                               "Confidence is a deterministic interpretability score (0–1) from threshold rules on this run — not an ML probability. Higher values mean more independent signals agreed on the same hypothesis.")
+                           | Text.H4("Висновки")
+                           | (result.Recommendations.Length == 0
+                               ? Text.Muted("No recommendations returned for this run.")
+                               : recommendationsStack))
+                       | (Layout.Horizontal().Gap(2)
+                           | new Button("View temporal clusters & top differences")
+                               .OnClick(_ => openMismatchSheet())
+                           | new Button("View metrics")
+                               .OnClick(_ => openMetricsSheet()))
+                       | mismatchSheetView
+                       | metricsSheetView;
+            }
         }
+
+        private static object BuildMetricsSheetBody(ClientServices.ComparisonResultDto result)
+        {
+            var hasPairs = result.TotalComparedPoints > 0;
+
+            object ValueLine(string line) =>
+                hasPairs ? Text.Block(line) : Text.Muted("— no paired samples yet for this run.");
+
+            return Layout.Vertical().Gap(3)
+                   | (hasPairs
+                       ? Text.Muted(
+                           "Values are computed only on paired points that survived alignment and overlap checks.")
+                       : Callout.Warning(
+                           "Compared points: 0 — pairing tries exact row, then band-scaled UTC nearest (skew cap), then experiment-progress pairing (min |u_sim−u_field|). Values appear below once pairs exist."))
+                   | Text.Block("MAE · Mean Absolute Error").Bold()
+                   | Text.Muted(
+                       "Mean of absolute dB gaps between simulator and field on each paired sample. Describes typical error magnitude "
+                       + "without direction; robust to outliers compared with RMSE, but treats every sample equally.")
+                   | ValueLine($"MAE: {result.Mae:F3} dB")
+                   | Text.Block("RMSE · Root Mean Square Error").Bold()
+                   | Text.Muted(
+                       "Square root of the mean squared dB residuals. Highlights larger disagreements—big spikes inflate RMSE faster than MAE—"
+                       + "useful when a few catastrophic mismatches matter.")
+                   | ValueLine($"RMSE: {result.Rmse:F3} dB")
+                   | Text.Block("MRE · Mean Relative Error").Bold()
+                   | Text.Muted(
+                       "Average absolute relative discrepancy versus the observed field SPL, expressed as a percent for this prototype. "
+                       + "Interpret together with amplitude scale: very low SNR bins can mechanically inflate percentages.")
+                   | ValueLine($"MRE: {result.MeanRelativeErrorPercent:F2}%")
+                   | Text.Block("P95 · 95th percentile absolute error").Bold()
+                   | Text.Muted(
+                       "The residual dB value such that roughly 95% of paired mismatches lie below it—a tail-focused summary complementary to MAE/RMSE.")
+                   | ValueLine($"P95 absolute error: {result.P95AbsoluteError:F3} dB")
+                   | Text.Block("Significant points").Bold()
+                   | Text.Muted(
+                       "Count of paired samples classified as materially different versus total paired observations. "
+                       + "Buckets use relative amplitude thresholds; see severity legend.")
+                   | ValueLine(
+                       $"Significant points: {result.SignificantDifferenceCount} / {result.TotalComparedPoints} paired samples "
+                       + "(relative amplitude error severity tiers)")
+                   | Text.H4("Severity buckets (relative amplitude error)")
+                   | Text.Muted(
+                       "LOW < 2%; MODERATE 2–5%; HIGH 5–10%; CRITICAL > 10%. "
+                       + "Severity labels drive the numerator of “significant” counts and help triage hotspots.");
+        }
+
+        private static object BuildTemporalClustersBlock(ClientServices.ComparisonResultDto result) =>
+            Layout.Vertical().Gap(1)
+            | Text.H4("Temporal clusters (Top mismatches)")
+            | (result.TemporalClusters.Length == 0
+                ? Text.Muted("Clusters appear when bursts of samples share the same band and timestamps within ~75ms.")
+                : new List(result.TemporalClusters.Select(c =>
+                    new ListItem(
+                        $"Cluster #{c.Ordinal}: {c.TimeStart:HH:mm:ss.fff}–{c.TimeEnd:HH:mm:ss.fff} | {c.FrequencyBand} Hz | "
+                        + $"n={c.PointCount}, mean rel err {c.MeanRelativeErrorPercent:F1}%"))));
+
+        private static object BuildTopDifferencesBlock(ClientServices.ComparisonResultDto result) =>
+            Layout.Vertical().Gap(1)
+            | Text.H4("Top Differences")
+            | (result.TopDifferences.Length == 0
+                ? Text.Muted("No outlier rows in the Top-N list.")
+                : new List(result.TopDifferences.Select(x =>
+                    new ListItem(
+                        $"{x.Timestamp:HH:mm:ss.fff} | {x.FrequencyBand} Hz | rel={x.RelativeErrorPercent:F1}% | {x.Severity.ToUpperInvariant()}"))));
 
         private static object BuildRecommendationCard(ClientServices.RecommendationDto rec)
         {
