@@ -95,6 +95,51 @@ public sealed class DatasetSignalOverviewDto
     public decimal? MeanNoiseLevelDb { get; init; }
 }
 
+public sealed class AcousticSampleRowDto
+{
+    [JsonPropertyName("timestamp")]
+    public DateTimeOffset Timestamp { get; init; }
+
+    [JsonPropertyName("frequencyBand")]
+    public decimal FrequencyBand { get; init; }
+
+    [JsonPropertyName("amplitudeDb")]
+    public decimal AmplitudeDb { get; init; }
+
+    [JsonPropertyName("depthMeters")]
+    public decimal DepthMeters { get; init; }
+
+    [JsonPropertyName("rangeMeters")]
+    public decimal RangeMeters { get; init; }
+
+    [JsonPropertyName("soundSpeed")]
+    public decimal? SoundSpeed { get; init; }
+
+    [JsonPropertyName("noiseLevelDb")]
+    public decimal? NoiseLevelDb { get; init; }
+}
+
+public sealed class DatasetSamplesPageDto
+{
+    [JsonPropertyName("datasetId")]
+    public Guid DatasetId { get; init; }
+
+    [JsonPropertyName("datasetName")]
+    public string DatasetName { get; init; } = string.Empty;
+
+    [JsonPropertyName("totalCount")]
+    public int TotalCount { get; init; }
+
+    [JsonPropertyName("offset")]
+    public int Offset { get; init; }
+
+    [JsonPropertyName("limit")]
+    public int Limit { get; init; }
+
+    [JsonPropertyName("items")]
+    public AcousticSampleRowDto[] Items { get; init; } = [];
+}
+
 public sealed class CreateComparisonRequestDto
 {
     [JsonPropertyName("simulationDatasetId")]
@@ -120,6 +165,40 @@ public sealed class CreateDatasetRequestDto
 
     [JsonPropertyName("version")]
     public string Version { get; init; } = "v1";
+}
+
+public sealed class GenerateSimulationDatasetRequestDto
+{
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = "parameter-simulation";
+
+    [JsonPropertyName("depthMeters")]
+    public decimal DepthMeters { get; init; } = 60;
+
+    [JsonPropertyName("temperatureCelsius")]
+    public decimal TemperatureCelsius { get; init; } = 12;
+
+    [JsonPropertyName("salinityPsu")]
+    public decimal SalinityPsu { get; init; } = 35;
+
+    [JsonPropertyName("noiseLevelDb")]
+    public decimal NoiseLevelDb { get; init; } = -92;
+
+    [JsonPropertyName("bottomType")]
+    public string BottomType { get; init; } = "sand";
+
+    [JsonPropertyName("durationMinutes")]
+    public int DurationMinutes { get; init; } = 60;
+
+    [JsonPropertyName("frequencyBandsHz")]
+    public decimal[]? FrequencyBandsHz { get; init; }
+
+    [JsonPropertyName("modelVersion")]
+    public string? ModelVersion { get; init; }
+
+    /// <summary>POST api/simulations/environment — mirrors every row of this field dataset (timestamps/bands/context).</summary>
+    [JsonPropertyName("alignToFieldDatasetId")]
+    public Guid? AlignToFieldDatasetId { get; init; }
 }
 
 public sealed class DifferencePointDto
@@ -226,6 +305,10 @@ public sealed class DifferenceClusterDto
 
 public sealed class ComparisonResultDto
 {
+    /// <summary>Set when pairing used normalized experiment-progress (u in [0,1] per dataset) after exact UTC failed.</summary>
+    [JsonPropertyName("timelineNormalizationApplied")]
+    public bool TimelineNormalizationApplied { get; init; }
+
     [JsonPropertyName("comparisonRunId")]
     public Guid ComparisonRunId { get; init; }
 

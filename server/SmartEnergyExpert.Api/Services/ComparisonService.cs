@@ -25,35 +25,52 @@ public sealed class ComparisonService(AppDbContext dbContext) : IComparisonServi
             .Where(x => x.DatasetId == fieldDataset.Id)
             .ToListAsync(cancellationToken);
 
-        var fieldLookup = fieldSamples.ToDictionary(
+        var simulationBandSet = simulationSamples
+            .Select(x => x.FrequencyBand)
+            .Distinct()
+            .OrderBy(x => x)
+            .ToArray();
+        var fieldBandSet = fieldSamples
+            .Select(x => x.FrequencyBand)
+            .Distinct()
+            .OrderBy(x => x)
+            .ToArray();
+        var bandIntersectionExact = simulationBandSet.Intersect(fieldBandSet).ToArray();
+        var bandsAlignable = BandsAlignableAcrossDatasets(simulationBandSet, fieldBandSet);
+
+        var fieldLookupExact = fieldSamples.ToDictionary(
             x => (x.Timestamp.UtcDateTime, x.FrequencyBand),
             x => x,
             EqualityComparer<(DateTime, decimal)>.Default);
 
-        var differences = new List<DifferencePoint>();
-        foreach (var simulation in simulationSamples)
+        var maxTimeSkew = ResolveMaxPairingTimeSkew(simulationSamples, fieldSamples);
+        var timelineAlignment = TimelineAlignment.TryCreate(simulationSamples, fieldSamples);
+
+        var differences = BuildDifferencePoints(
+            simulationSamples,
+            fieldSamples,
+            fieldLookupExact,
+            maxTimeSkew);
+
+        Dictionary<Guid, AcousticSample>? experimentProgressPairsBySimId = null;
+        var usedExperimentProgressPairing = false;
+        if (differences.Count == 0
+            && bandsAlignable
+            && timelineAlignment is not null)
         {
-            if (!fieldLookup.TryGetValue((simulation.Timestamp.UtcDateTime, simulation.FrequencyBand), out var field))
+            experimentProgressPairsBySimId = BuildExperimentProgressPairingMap(
+                simulationSamples,
+                fieldSamples,
+                timelineAlignment);
+            differences =
+                BuildDifferencePointsFromExperimentProgressPairs(
+                    simulationSamples,
+                    experimentProgressPairsBySimId);
+            usedExperimentProgressPairing = differences.Count > 0;
+            if (!usedExperimentProgressPairing)
             {
-                continue;
+                experimentProgressPairsBySimId = null;
             }
-
-            var absError = Math.Abs(simulation.AmplitudeDb - field.AmplitudeDb);
-            var refMagnitude = Math.Max(Math.Abs(field.AmplitudeDb), 20m);
-            var relErrorPercent = Math.Abs(simulation.AmplitudeDb - field.AmplitudeDb) / refMagnitude * 100;
-            var severity = ResolveSeverity(relErrorPercent);
-
-            differences.Add(new DifferencePoint
-            {
-                Timestamp = simulation.Timestamp,
-                FrequencyBand = simulation.FrequencyBand,
-                SimulationValue = simulation.AmplitudeDb,
-                FieldValue = field.AmplitudeDb,
-                AbsoluteError = decimal.Round(absError, 4),
-                RelativeErrorPercent = decimal.Round(relErrorPercent, 4),
-                Severity = severity,
-                Explanation = BuildDifferenceExplanation(simulation, field, relErrorPercent)
-            });
         }
 
         var comparedPoints = differences.Count;
@@ -88,9 +105,13 @@ public sealed class ComparisonService(AppDbContext dbContext) : IComparisonServi
 
         var visualization = BuildVisualizationArtifacts(
             simulationSamples,
-            fieldLookup,
+            fieldSamples,
+            fieldLookupExact,
             differences,
-            dominantBand);
+            dominantBand,
+            maxTimeSkew,
+            experimentProgressPairsBySimId,
+            timelineNormalizationApplied: usedExperimentProgressPairing);
 
         var recommendations = BuildRecommendations(
             insights,
@@ -98,7 +119,15 @@ public sealed class ComparisonService(AppDbContext dbContext) : IComparisonServi
             mre,
             significantCount,
             significantShare,
-            comparedPoints).ToArray();
+            comparedPoints,
+            simulationSamples.Count,
+            fieldSamples.Count,
+            simulationBandSet,
+            fieldBandSet,
+            bandIntersectionExact,
+            bandsAlignable,
+            usedExperimentProgressPairing && comparedPoints > 0,
+            bandsAlignable && timelineAlignment is not null && comparedPoints == 0).ToArray();
 
         return new ComparisonComputationResult
         {
@@ -213,15 +242,27 @@ public sealed class ComparisonService(AppDbContext dbContext) : IComparisonServi
 
     private static ComparisonVisualizationComputation BuildVisualizationArtifacts(
         IReadOnlyList<AcousticSample> simulationSamples,
-        IReadOnlyDictionary<(DateTime, decimal), AcousticSample> fieldLookup,
+        IReadOnlyList<AcousticSample> fieldSamples,
+        IReadOnlyDictionary<(DateTime, decimal), AcousticSample> fieldLookupExact,
         IReadOnlyList<DifferencePoint> differences,
-        decimal dominantBand)
+        decimal dominantBand,
+        TimeSpan maxTimeSkew,
+        IReadOnlyDictionary<Guid, AcousticSample>? experimentProgressPairsBySimId,
+        bool timelineNormalizationApplied)
     {
-        var overlay = BuildOverlaySeries(simulationSamples, fieldLookup, dominantBand, maxPoints: 220);
+        var overlay = BuildOverlaySeries(
+            simulationSamples,
+            fieldSamples,
+            fieldLookupExact,
+            dominantBand,
+            maxTimeSkew,
+            experimentProgressPairsBySimId,
+            maxPoints: 220);
         var heatmap = BuildHeatmapCells(differences, maxCells: 180);
         var clusters = BuildTemporalClusters(differences, maxClusters: 18);
         return new ComparisonVisualizationComputation
         {
+            TimelineNormalizationApplied = timelineNormalizationApplied,
             DominantVisualizationFrequencyBand = dominantBand,
             OverlaySeries = overlay,
             HeatmapCells = heatmap,
@@ -231,36 +272,40 @@ public sealed class ComparisonService(AppDbContext dbContext) : IComparisonServi
 
     private static IReadOnlyList<OverlaySeriesComputationPoint> BuildOverlaySeries(
         IReadOnlyList<AcousticSample> simulationSamples,
-        IReadOnlyDictionary<(DateTime, decimal), AcousticSample> fieldLookup,
+        IReadOnlyList<AcousticSample> fieldSamples,
+        IReadOnlyDictionary<(DateTime, decimal), AcousticSample> fieldLookupExact,
         decimal band,
+        TimeSpan maxTimeSkew,
+        IReadOnlyDictionary<Guid, AcousticSample>? experimentProgressPairsBySimId,
         int maxPoints)
     {
-        var pairs = simulationSamples
-            .Where(s => s.FrequencyBand == band)
-            .OrderBy(s => s.Timestamp)
-            .Select(s =>
+        var pairs = new List<OverlaySeriesComputationPoint>();
+        foreach (var s in simulationSamples.Where(x => x.FrequencyBand == band).OrderBy(x => x.Timestamp))
+        {
+            AcousticSample? field = null;
+            if (experimentProgressPairsBySimId is not null
+                && experimentProgressPairsBySimId.TryGetValue(s.Id, out var mapped))
             {
-                if (!fieldLookup.TryGetValue((s.Timestamp.UtcDateTime, s.FrequencyBand), out var field))
-                {
-                    return (AcousticSample?)null;
-                }
+                field = mapped;
+            }
+            else
+            {
+                field = ResolveFieldSampleAfterExact(s, fieldSamples, fieldLookupExact, maxTimeSkew);
+            }
 
-                return (AcousticSample?)s;
-            })
-            .Where(s => s is not null)
-            .Cast<AcousticSample>()
-            .Select(s =>
+            if (field is null)
             {
-                var field = fieldLookup[(s.Timestamp.UtcDateTime, s.FrequencyBand)];
-                return new OverlaySeriesComputationPoint
-                {
-                    Timestamp = s.Timestamp,
-                    FrequencyBand = s.FrequencyBand,
-                    SimulationDb = s.AmplitudeDb,
-                    FieldDb = field.AmplitudeDb
-                };
-            })
-            .ToList();
+                continue;
+            }
+
+            pairs.Add(new OverlaySeriesComputationPoint
+            {
+                Timestamp = s.Timestamp,
+                FrequencyBand = s.FrequencyBand,
+                SimulationDb = s.AmplitudeDb,
+                FieldDb = field.AmplitudeDb
+            });
+        }
 
         if (pairs.Count <= maxPoints)
         {
@@ -362,7 +407,15 @@ public sealed class ComparisonService(AppDbContext dbContext) : IComparisonServi
         decimal mre,
         int significantCount,
         decimal significantShare,
-        int totalComparedPoints)
+        int totalComparedPoints,
+        int simulationSampleCount,
+        int fieldSampleCount,
+        IReadOnlyList<decimal> simulationBands,
+        IReadOnlyList<decimal> fieldBands,
+        IReadOnlyList<decimal> bandIntersectionExact,
+        bool bandsAlignableAcrossDatasets,
+        bool usedExperimentProgressPairing,
+        bool attemptedExperimentProgressFallbackWithoutPairs)
     {
         const string method = "rule_engine_v1";
         const string confidenceNote =
@@ -370,6 +423,68 @@ public sealed class ComparisonService(AppDbContext dbContext) : IComparisonServi
             + "Higher values mean more independent signals agreed on the same hypothesis.";
 
         var list = new List<Recommendation>();
+
+        if (totalComparedPoints == 0)
+        {
+            static string BandHzList(IReadOnlyList<decimal> bands) =>
+                bands.Count == 0 ? "(none)" : string.Join(", ", bands.Select(b => b.ToString("G29"))) + " Hz";
+
+            var explainBands = bandIntersectionExact.Count == 0 && !bandsAlignableAcrossDatasets
+                ? "Distinct frequency_band sets do not overlap exactly and do not match after common decade scaling (e.g. 6250 Hz vs 62500 Hz)."
+                : bandIntersectionExact.Count > 0
+                    ? $"Exact band overlap: {BandHzList(bandIntersectionExact)}, but no pairing succeeded across UTC-window and experiment-progress (u-alignment) phases."
+                    : bandsAlignableAcrossDatasets switch
+                    {
+                        true when attemptedExperimentProgressFallbackWithoutPairs =>
+                            "Bands align by decade scaling; experiment-progress (u-alignment) pairing ran but assigned no usable pairs (sparse alignable rows or overlapping band coverage missing on one side).",
+                        true => "Bands can align by decade scaling, but nearest UTC neighbours still exceeded the adaptive skew cap.",
+                        false => "No band alignment after exact match and decade scaling heuristics."
+                    };
+
+            var evidence = new List<string>
+            {
+                $"Simulation: {simulationSampleCount} samples; field: {fieldSampleCount} samples.",
+                $"Simulation distinct frequency_band values: {BandHzList(simulationBands)}.",
+                $"Field distinct frequency_band values: {BandHzList(fieldBands)}.",
+                explainBands,
+                "Pairing order: exact (UTC, band) → scaled-band nearest UTC within skew → nearest field neighbour by smallest |u_sim − u_field| where u ∈ [0,1] is normalized elapsed inside each dataset’s own span."
+            };
+
+            list.Add(CreateReco(
+                "NO_JOINABLE_PAIRS",
+                "DATA_ALIGNMENT",
+                "Zero paired samples after band scaling, UTC nearest-match, and experiment-progress (u-alignment) pairing — nothing entered the residual statistics.",
+                confidenceNote,
+                method,
+                bandsAlignableAcrossDatasets
+                    ? "Provide matching frequency rows on both sides (after unit scaling), ensure each dataset has more than one time instant where needed, and align CSV timelines or epoch references."
+                    : "Harmonize frequency_band units between simulator output and field logger (Hz vs kHz-encoding, factor-of-10 columns), then retry.",
+                0.95m,
+                evidence));
+
+            return list;
+        }
+
+        if (usedExperimentProgressPairing)
+        {
+            var evidence = new List<string>
+            {
+                "Exact (UTC × band) and UTC-window nearest did not yield pairs.",
+                "Each simulation sample u_sim = elapsed fraction in [0,1] inside the simulation CSV span was matched to an alignable field row minimizing |u_field-u_sim| (u_field from the field CSV span independently) when the series are similarly dense; absolute calendar epochs are not matched.",
+                "If the field trace is much denser than simulation in the same alignable band (≥8× samples), the prototype places sim rows on evenly spaced time-quantile picks along the ordered field series so every model point samples a different slice of the observation window.",
+                $"Compared {totalComparedPoints} residual points; MAE {mae:F3} dB, MRE {mre:F2}%."
+            };
+
+            list.Add(CreateReco(
+                "EXPERIMENT_PROGRESS_PAIRING",
+                "DATA_ALIGNMENT",
+                "Automatic pairing used experiment-progress (normalized elapsed share per dataset): valid when both traces represent the same phase structure without a shared UTC baseline.",
+                confidenceNote,
+                method,
+                "If you publish pointwise errors, optionally re-run after importing both series on identical UTC or shared elapsed-second from a common experiment t₀ — exact pairing will supersede progress mode.",
+                0.96m,
+                evidence));
+        }
 
         if (insights.ConcentrationDominantBandShareWeighted >= 0.45m
             && significantCount >= 4
@@ -585,6 +700,326 @@ public sealed class ComparisonService(AppDbContext dbContext) : IComparisonServi
         var avg = values.Average();
         var sum = values.Sum(x => (x - avg) * (x - avg));
         return Math.Sqrt(sum / (values.Count - 1));
+    }
+
+    private static bool BandsAlignableAcrossDatasets(
+        IReadOnlyList<decimal> simulationBands,
+        IReadOnlyList<decimal> fieldBands) =>
+        simulationBands.Any(sb => fieldBands.Any(fb => BandsPhysicallyAlign(sb, fb)));
+
+    /// <summary>Same physical tone within tolerance, allowing common CSV factor-of-10 band encoding.</summary>
+    private static bool BandsPhysicallyAlign(decimal simulationBandHz, decimal fieldBandHz)
+    {
+        if (simulationBandHz <= 0 || fieldBandHz <= 0)
+        {
+            return false;
+        }
+
+        if (simulationBandHz == fieldBandHz)
+        {
+            return true;
+        }
+
+        const decimal absTol = 30m;
+        const decimal relTol = 0.05m;
+        var direct = Math.Abs(simulationBandHz - fieldBandHz);
+        if (direct <= absTol || direct <= Math.Min(simulationBandHz, fieldBandHz) * relTol)
+        {
+            return true;
+        }
+
+        for (var k = -6; k <= 6; k++)
+        {
+            if (k == 0)
+            {
+                continue;
+            }
+
+            var scaled = simulationBandHz * (decimal)Math.Pow(10.0, k);
+            var d = Math.Abs(scaled - fieldBandHz);
+            if (d <= absTol || d <= Math.Min(scaled, fieldBandHz) * relTol)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Largest allowed |Δt| for nearest-neighbour pairing after exact key miss.</summary>
+    private static TimeSpan ResolveMaxPairingTimeSkew(
+        IReadOnlyList<AcousticSample> simulationSamples,
+        IReadOnlyList<AcousticSample> fieldSamples)
+    {
+        if (simulationSamples.Count == 0 || fieldSamples.Count == 0)
+        {
+            return TimeSpan.FromDays(14);
+        }
+
+        var simSpanTicks =
+            (simulationSamples.Max(x => x.Timestamp) - simulationSamples.Min(x => x.Timestamp)).Ticks;
+        var fieldTicks =
+            (fieldSamples.Max(x => x.Timestamp) - fieldSamples.Min(x => x.Timestamp)).Ticks;
+        var mergedTicks = Math.Max(simSpanTicks, fieldTicks);
+
+        var halfMerged = mergedTicks / 2;
+        var clockSkewFloor = TimeSpan.FromHours(48).Ticks;
+        var sixHour = TimeSpan.FromHours(6).Ticks;
+        var capTicks = TimeSpan.FromDays(180).Ticks;
+
+        var adaptiveTicks = Math.Max(Math.Max(halfMerged, clockSkewFloor), sixHour);
+        adaptiveTicks = Math.Min(adaptiveTicks, capTicks);
+
+        return TimeSpan.FromTicks(adaptiveTicks);
+    }
+
+    private static List<DifferencePoint> BuildDifferencePoints(
+        IReadOnlyList<AcousticSample> simulationSamples,
+        IReadOnlyList<AcousticSample> fieldSamples,
+        IReadOnlyDictionary<(DateTime, decimal), AcousticSample> fieldLookupExact,
+        TimeSpan maxTimeSkew)
+    {
+        var differences = new List<DifferencePoint>();
+        foreach (var simulation in simulationSamples)
+        {
+            var field =
+                ResolveFieldSampleAfterExact(simulation, fieldSamples, fieldLookupExact, maxTimeSkew);
+            var point = ProjectToDifferencePoint(simulation, field);
+            if (point is not null)
+            {
+                differences.Add(point);
+            }
+        }
+
+        return differences;
+    }
+
+    private static List<DifferencePoint> BuildDifferencePointsFromExperimentProgressPairs(
+        IReadOnlyList<AcousticSample> simulationSamples,
+        IReadOnlyDictionary<Guid, AcousticSample> pairBySimulationId)
+    {
+        var differences = new List<DifferencePoint>();
+        foreach (var simulation in simulationSamples)
+        {
+            if (!pairBySimulationId.TryGetValue(simulation.Id, out var field))
+            {
+                continue;
+            }
+
+            var point = ProjectToDifferencePoint(simulation, field);
+            if (point is not null)
+            {
+                differences.Add(point);
+            }
+        }
+
+        return differences;
+    }
+
+    private static DifferencePoint? ProjectToDifferencePoint(AcousticSample simulation, AcousticSample? field)
+    {
+        if (field is null)
+        {
+            return null;
+        }
+
+        var absError = Math.Abs(simulation.AmplitudeDb - field.AmplitudeDb);
+        var refMagnitude = Math.Max(Math.Abs(field.AmplitudeDb), 20m);
+        var relErrorPercent = Math.Abs(simulation.AmplitudeDb - field.AmplitudeDb) / refMagnitude * 100;
+        var severity = ResolveSeverity(relErrorPercent);
+
+        return new DifferencePoint
+        {
+            Timestamp = simulation.Timestamp,
+            FrequencyBand = simulation.FrequencyBand,
+            SimulationValue = simulation.AmplitudeDb,
+            FieldValue = field.AmplitudeDb,
+            AbsoluteError = decimal.Round(absError, 4),
+            RelativeErrorPercent = decimal.Round(relErrorPercent, 4),
+            Severity = severity,
+            Explanation = BuildDifferenceExplanation(simulation, field, relErrorPercent)
+        };
+    }
+
+    /// <summary>
+    /// When the field series is much denser than simulation in the same alignable band, map each sim row to a field row
+    /// at evenly spaced quantile indices across the field chronology (balances sample counts). Otherwise use closest u.
+    /// </summary>
+    private static Dictionary<Guid, AcousticSample> BuildExperimentProgressPairingMap(
+        IReadOnlyList<AcousticSample> simulationSamples,
+        IReadOnlyList<AcousticSample> fieldSamples,
+        TimelineAlignment spanBounds)
+    {
+        const int stratifyFieldVersusSimRatio = 8;
+
+        var map = new Dictionary<Guid, AcousticSample>();
+        foreach (var simBand in simulationSamples.Select(s => s.FrequencyBand).Distinct().OrderBy(x => x))
+        {
+            var cohortSim = simulationSamples
+                .Where(s => s.FrequencyBand == simBand)
+                .OrderBy(s => s.Timestamp)
+                .ThenBy(s => s.Id)
+                .ToList();
+            var cohortField = fieldSamples
+                .Where(f => BandsPhysicallyAlign(simBand, f.FrequencyBand))
+                .OrderBy(f => f.Timestamp)
+                .ThenBy(f => f.Id)
+                .ToList();
+            if (cohortField.Count == 0 || cohortSim.Count == 0)
+            {
+                continue;
+            }
+
+            var stratifyQuantiles =
+                cohortField.Count >= stratifyFieldVersusSimRatio * Math.Max(cohortSim.Count, 1);
+
+            for (var i = 0; i < cohortSim.Count; i++)
+            {
+                AcousticSample paired;
+                if (stratifyQuantiles)
+                {
+                    var fi = cohortField.Count == 1
+                        ? 0
+                        : (int)Math.Round(i * (cohortField.Count - 1) / (double)Math.Max(cohortSim.Count - 1, 1));
+                    fi = Math.Clamp(fi, 0, cohortField.Count - 1);
+                    paired = cohortField[fi];
+                }
+                else
+                {
+                    var hit = FindBestExperimentProgressFieldPair(cohortSim[i], cohortField, spanBounds);
+                    if (hit is null)
+                    {
+                        continue;
+                    }
+
+                    paired = hit;
+                }
+
+                map[cohortSim[i].Id] = paired;
+            }
+        }
+
+        return map;
+    }
+
+    private static AcousticSample? ResolveFieldSampleAfterExact(
+        AcousticSample simulation,
+        IReadOnlyList<AcousticSample> fieldSamples,
+        IReadOnlyDictionary<(DateTime, decimal), AcousticSample> exactLookup,
+        TimeSpan maxTimeSkew)
+    {
+        if (exactLookup.TryGetValue((simulation.Timestamp.UtcDateTime, simulation.FrequencyBand), out var hit))
+        {
+            return hit;
+        }
+
+        return FindBestFlexibleFieldPair(simulation, fieldSamples, maxTimeSkew);
+    }
+
+    private static AcousticSample? FindBestFlexibleFieldPair(
+        AcousticSample simulation,
+        IReadOnlyList<AcousticSample> fieldSamples,
+        TimeSpan maxTimeSkew)
+    {
+        AcousticSample? best = null;
+        var bestSeconds = double.MaxValue;
+        var windowSec = maxTimeSkew.TotalSeconds;
+
+        foreach (var f in fieldSamples)
+        {
+            if (!BandsPhysicallyAlign(simulation.FrequencyBand, f.FrequencyBand))
+            {
+                continue;
+            }
+
+            var dt = Math.Abs((f.Timestamp - simulation.Timestamp).TotalSeconds);
+            if (dt > windowSec)
+            {
+                continue;
+            }
+
+            if (dt < bestSeconds)
+            {
+                bestSeconds = dt;
+                best = f;
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>Field sample on an alignable band whose normalized elapsed u is closest to this simulation sample’s u.</summary>
+    private static AcousticSample? FindBestExperimentProgressFieldPair(
+        AcousticSample simulation,
+        IReadOnlyList<AcousticSample> fieldSamples,
+        TimelineAlignment spanBounds)
+    {
+        var uSim = UnitProgressAlongDatasetSpan(simulation.Timestamp, spanBounds.SimMin, spanBounds.SimMax);
+
+        AcousticSample? best = null;
+        var bestDelta = decimal.MaxValue;
+        foreach (var field in fieldSamples)
+        {
+            if (!BandsPhysicallyAlign(simulation.FrequencyBand, field.FrequencyBand))
+            {
+                continue;
+            }
+
+            var uField =
+                UnitProgressAlongDatasetSpan(field.Timestamp, spanBounds.FieldMin, spanBounds.FieldMax);
+            var d = Math.Abs(uSim - uField);
+            if (d > bestDelta)
+            {
+                continue;
+            }
+
+            if (best is null || d < bestDelta)
+            {
+                bestDelta = d;
+                best = field;
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>Normalized position of <paramref name="instant"/> inside [<paramref name="min"/>, <paramref name="max"/>], in [0,1], independent clock — only relative span.</summary>
+    private static decimal UnitProgressAlongDatasetSpan(
+        DateTimeOffset instant,
+        DateTimeOffset min,
+        DateTimeOffset max)
+    {
+        var minU = min.ToUniversalTime();
+        var maxU = max.ToUniversalTime();
+        var instU = instant.ToUniversalTime();
+        var denomTicks = Math.Max((maxU - minU).Ticks, 1L);
+        var numTicks = (instU - minU).Ticks;
+        var clampedTicks = Math.Min(Math.Max(numTicks, 0L), denomTicks);
+        return clampedTicks / (decimal)denomTicks;
+    }
+
+    /// <summary>Per-dataset time span extents for experiment-progress pairing (normalized u per side).</summary>
+    private sealed record TimelineAlignment(
+        DateTimeOffset SimMin,
+        DateTimeOffset SimMax,
+        DateTimeOffset FieldMin,
+        DateTimeOffset FieldMax)
+    {
+        internal static TimelineAlignment? TryCreate(
+            IReadOnlyList<AcousticSample> simulationSamples,
+            IReadOnlyList<AcousticSample> fieldSamples)
+        {
+            if (simulationSamples.Count == 0 || fieldSamples.Count == 0)
+            {
+                return null;
+            }
+
+            return new TimelineAlignment(
+                simulationSamples.Min(static x => x.Timestamp),
+                simulationSamples.Max(static x => x.Timestamp),
+                fieldSamples.Min(static x => x.Timestamp),
+                fieldSamples.Max(static x => x.Timestamp));
+        }
     }
 
     private sealed record RunInsights(

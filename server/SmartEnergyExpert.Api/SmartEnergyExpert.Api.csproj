@@ -1,5 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
+  <ItemGroup>
+    <Content Include="..\..\data\ARLUT_01_partA_01_dataset_field_stride2500.csv" Link="seed-data\ARLUT_01_partA_01_dataset_field_stride2500.csv" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>

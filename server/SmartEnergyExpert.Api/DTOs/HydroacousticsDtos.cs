@@ -33,12 +33,54 @@ public sealed class DatasetSignalOverviewResponse
     public decimal? MeanNoiseLevelDb { get; init; }
 }
 
+public sealed class AcousticSampleRowResponse
+{
+    public DateTimeOffset Timestamp { get; init; }
+    public decimal FrequencyBand { get; init; }
+    public decimal AmplitudeDb { get; init; }
+    public decimal DepthMeters { get; init; }
+    public decimal RangeMeters { get; init; }
+    public decimal? SoundSpeed { get; init; }
+    public decimal? NoiseLevelDb { get; init; }
+}
+
+public sealed class DatasetSamplesPageResponse
+{
+    public Guid DatasetId { get; init; }
+    public string DatasetName { get; init; } = string.Empty;
+    public int TotalCount { get; init; }
+    public int Offset { get; init; }
+    public int Limit { get; init; }
+    public IReadOnlyList<AcousticSampleRowResponse> Items { get; init; } = [];
+}
+
 public sealed class CreateDatasetRequest
 {
     public string Name { get; init; } = string.Empty;
     public string Type { get; init; } = string.Empty;
     public string SourceSystem { get; init; } = string.Empty;
     public string Version { get; init; } = "v1";
+}
+
+public sealed class GenerateSimulationDatasetRequest
+{
+    public string Name { get; init; } = "parameter-simulation";
+    public decimal DepthMeters { get; init; } = 60;
+    public decimal TemperatureCelsius { get; init; } = 12;
+    public decimal SalinityPsu { get; init; } = 35;
+    /// <summary>Environmental noise floor (negative dB re 1µPa illustrative scale).</summary>
+    public decimal NoiseLevelDb { get; init; } = -92;
+    /// <summary>For example sand, mud, silt, hard_rock.</summary>
+    public string BottomType { get; init; } = "sand";
+    public int DurationMinutes { get; init; } = 60;
+    public decimal[]? FrequencyBandsHz { get; init; }
+    public string? ModelVersion { get; init; }
+
+    /// <summary>
+    /// When set, builds one synthetic row per field sample (same timestamps and bands).
+    /// DurationMinutes / FrequencyBandsHz are ignored; SPL comes from env parameters.
+    /// </summary>
+    public Guid? AlignToFieldDatasetId { get; init; }
 }
 
 public sealed class AddAcousticSampleRequest
@@ -111,6 +153,11 @@ public sealed class DifferenceClusterResponse
 
 public sealed class ComparisonResultResponse
 {
+    /// <summary>
+    /// When true, pairing used normalized experiment progress (elapsed fraction inside each CSV span); wall-clock epochs need not coincide.
+    /// </summary>
+    public bool TimelineNormalizationApplied { get; init; }
+
     public Guid ComparisonRunId { get; init; }
     public decimal Mae { get; init; }
     public decimal Rmse { get; init; }

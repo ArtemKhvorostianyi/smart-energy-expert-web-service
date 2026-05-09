@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 using SmartEnergyExpert.Api.Data;
 using SmartEnergyExpert.Api.Entities;
 
@@ -6,6 +7,7 @@ namespace SmartEnergyExpert.Api.Services;
 
 public sealed class DatabaseInitializer(IServiceProvider serviceProvider, ILogger<DatabaseInitializer> logger)
 {
+    internal const string BundledArlutPartAFieldDatasetName = "ARLUT 01 part A field stride2500";
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
         try
@@ -16,6 +18,9 @@ public sealed class DatabaseInitializer(IServiceProvider serviceProvider, ILogge
             await dbContext.Database.MigrateAsync(cancellationToken);
             await SeedRolesAndUsersAsync(dbContext, cancellationToken);
             await SeedSyntheticDatasetsAsync(dbContext, cancellationToken);
+
+            var hostEnvironment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
+            await SeedBundledArlutPartAFieldDatasetAsync(dbContext, hostEnvironment, logger, cancellationToken);
 
             logger.LogInformation("Database initialization completed.");
         }
@@ -139,5 +144,62 @@ public sealed class DatabaseInitializer(IServiceProvider serviceProvider, ILogge
         dbContext.AcousticSamples.AddRange(simulationSamples);
         dbContext.AcousticSamples.AddRange(fieldSamples);
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static async Task SeedBundledArlutPartAFieldDatasetAsync(
+        AppDbContext dbContext,
+        IHostEnvironment hostEnvironment,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        if (await dbContext.Datasets.AsNoTracking().AnyAsync(x => x.Name == BundledArlutPartAFieldDatasetName, cancellationToken))
+        {
+            return;
+        }
+
+        var csvPath = ResolveBundledArlutStride2500CsvPath(hostEnvironment.ContentRootPath);
+        if (!File.Exists(csvPath))
+        {
+            logger.LogWarning("Bundled ARLUT CSV not found at {Path}; skip seed.", csvPath);
+            return;
+        }
+
+        var csv = await File.ReadAllTextAsync(csvPath, cancellationToken);
+        if (string.IsNullOrWhiteSpace(csv))
+        {
+            logger.LogWarning("Bundled ARLUT CSV at {Path} is empty; skip seed.", csvPath);
+            return;
+        }
+
+        var dataset = new Dataset
+        {
+            Name = BundledArlutPartAFieldDatasetName,
+            Type = "field",
+            SourceSystem = "arlut-csv-bundled",
+            Version = "partA-01-stride2500",
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+
+        dbContext.Datasets.Add(dataset);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        var imported = await AcousticCsvBatchImporter.ImportIntoDatasetAsync(dbContext, dataset, csv, cancellationToken);
+        logger.LogInformation(
+            "Seeded bundled field dataset {Name} with {Count} samples from {Path}.",
+            BundledArlutPartAFieldDatasetName,
+            imported,
+            csvPath);
+    }
+
+    /// <summary>Published build: <c>seed-data/</c>; dev: repo <c>../../data/</c>.</summary>
+    private static string ResolveBundledArlutStride2500CsvPath(string contentRoot)
+    {
+        var fromOutput = Path.GetFullPath(Path.Combine(contentRoot, "seed-data", "ARLUT_01_partA_01_dataset_field_stride2500.csv"));
+        if (File.Exists(fromOutput))
+        {
+            return fromOutput;
+        }
+
+        return Path.GetFullPath(Path.Combine(contentRoot, "..", "..", "data", "ARLUT_01_partA_01_dataset_field_stride2500.csv"));
     }
 }

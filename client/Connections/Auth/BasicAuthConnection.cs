@@ -35,6 +35,6 @@ public class BasicAuthConnection : IConnection, IHaveSecrets
     public async Task<(bool ok, string? message)> TestConnection(IConfiguration config)
     {
         await Task.CompletedTask;
-        return (true, "Basic Auth configured");
+        return (true, "Basic Auth налаштовано");
     }
 }

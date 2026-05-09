@@ -5,6 +5,7 @@ using System.Globalization;
 using SmartEnergyExpert.Api.Data;
 using SmartEnergyExpert.Api.DTOs;
 using SmartEnergyExpert.Api.Entities;
+using SmartEnergyExpert.Api.Services;
 
 namespace SmartEnergyExpert.Api.Controllers;
 
@@ -113,6 +114,54 @@ public sealed class DatasetsController(AppDbContext dbContext) : ControllerBase
         });
     }
 
+    [HttpGet("{datasetId:guid}/samples")]
+    public async Task<ActionResult<DatasetSamplesPageResponse>> GetSamplesPage(
+        Guid datasetId,
+        [FromQuery] int offset = 0,
+        [FromQuery] int limit = 200,
+        CancellationToken cancellationToken = default)
+    {
+        var dataset = await dbContext.Datasets.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == datasetId, cancellationToken);
+        if (dataset is null)
+        {
+            return NotFound("Dataset not found.");
+        }
+
+        var take = Math.Clamp(limit, 1, 2_000);
+        var skip = Math.Max(0, offset);
+
+        var total = await dbContext.AcousticSamples.AsNoTracking()
+            .CountAsync(x => x.DatasetId == datasetId, cancellationToken);
+
+        var items = await dbContext.AcousticSamples.AsNoTracking()
+            .Where(x => x.DatasetId == datasetId)
+            .OrderBy(x => x.Timestamp).ThenBy(x => x.FrequencyBand)
+            .Skip(skip)
+            .Take(take)
+            .Select(x => new AcousticSampleRowResponse
+            {
+                Timestamp = x.Timestamp,
+                FrequencyBand = x.FrequencyBand,
+                AmplitudeDb = x.AmplitudeDb,
+                DepthMeters = x.DepthMeters,
+                RangeMeters = x.RangeMeters,
+                SoundSpeed = x.SoundSpeed,
+                NoiseLevelDb = x.NoiseLevelDb
+            })
+            .ToListAsync(cancellationToken);
+
+        return Ok(new DatasetSamplesPageResponse
+        {
+            DatasetId = dataset.Id,
+            DatasetName = dataset.Name,
+            TotalCount = total,
+            Offset = skip,
+            Limit = take,
+            Items = items
+        });
+    }
+
     [HttpPost]
     [Authorize(Roles = "Admin,Expert")]
     public async Task<ActionResult<DatasetResponse>> Create([FromBody] CreateDatasetRequest request, CancellationToken cancellationToken)
@@ -144,6 +193,25 @@ public sealed class DatasetsController(AppDbContext dbContext) : ControllerBase
             TimeRangeEnd = dataset.TimeRangeEnd,
             SampleCount = 0
         });
+    }
+
+    [HttpDelete("{datasetId:guid}")]
+    [Authorize(Roles = "Admin,Expert")]
+    public async Task<ActionResult> Delete(Guid datasetId, CancellationToken cancellationToken)
+    {
+        var dataset = await dbContext.Datasets.FirstOrDefaultAsync(x => x.Id == datasetId, cancellationToken);
+        if (dataset is null)
+        {
+            return NotFound("Dataset not found.");
+        }
+
+        var linkedRuns = await dbContext.ComparisonRuns
+            .Where(r => r.SimulationDatasetId == datasetId || r.FieldDatasetId == datasetId)
+            .ToListAsync(cancellationToken);
+        dbContext.ComparisonRuns.RemoveRange(linkedRuns);
+        dbContext.Datasets.Remove(dataset);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return NoContent();
     }
 
     [HttpPost("{datasetId:guid}/samples")]
@@ -186,6 +254,7 @@ public sealed class DatasetsController(AppDbContext dbContext) : ControllerBase
     [HttpPost("{datasetId:guid}/samples/import-csv")]
     [Authorize(Roles = "Admin,Expert")]
     [Consumes("text/plain")]
+    [RequestSizeLimit(128 * 1024 * 1024)]
     public async Task<ActionResult<object>> ImportCsv(Guid datasetId, [FromBody] string csvContent, CancellationToken cancellationToken)
     {
         var dataset = await dbContext.Datasets.FirstOrDefaultAsync(x => x.Id == datasetId, cancellationToken);
@@ -199,71 +268,14 @@ public sealed class DatasetsController(AppDbContext dbContext) : ControllerBase
             return BadRequest("CSV content is empty.");
         }
 
-        var imported = 0;
-        var lines = csvContent.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        foreach (var rawLine in lines)
-        {
-            var line = rawLine.Trim();
-            if (line.StartsWith("timestamp", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            var cells = line.Split(',', StringSplitOptions.TrimEntries);
-            if (cells.Length < 7)
-            {
-                continue;
-            }
-
-            if (!DateTimeOffset.TryParse(cells[0], CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var timestamp))
-            {
-                continue;
-            }
-
-            if (!decimal.TryParse(cells[1], CultureInfo.InvariantCulture, out var frequencyBand) ||
-                !decimal.TryParse(cells[2], CultureInfo.InvariantCulture, out var amplitudeDb) ||
-                !decimal.TryParse(cells[3], CultureInfo.InvariantCulture, out var depthMeters) ||
-                !decimal.TryParse(cells[4], CultureInfo.InvariantCulture, out var rangeMeters))
-            {
-                continue;
-            }
-
-            decimal? soundSpeed = decimal.TryParse(cells[5], CultureInfo.InvariantCulture, out var speed) ? speed : null;
-            decimal? noiseLevel = decimal.TryParse(cells[6], CultureInfo.InvariantCulture, out var noise) ? noise : null;
-
-            dbContext.AcousticSamples.Add(new AcousticSample
-            {
-                DatasetId = dataset.Id,
-                Timestamp = timestamp,
-                FrequencyBand = frequencyBand,
-                AmplitudeDb = amplitudeDb,
-                DepthMeters = depthMeters,
-                RangeMeters = rangeMeters,
-                SoundSpeed = soundSpeed,
-                NoiseLevelDb = noiseLevel
-            });
-
-            if (dataset.TimeRangeStart == default || timestamp < dataset.TimeRangeStart)
-            {
-                dataset.TimeRangeStart = timestamp;
-            }
-
-            if (dataset.TimeRangeEnd == default || timestamp > dataset.TimeRangeEnd)
-            {
-                dataset.TimeRangeEnd = timestamp;
-            }
-
-            imported++;
-        }
-
-        dataset.UpdatedAt = DateTimeOffset.UtcNow;
-        await dbContext.SaveChangesAsync(cancellationToken);
+        var imported = await AcousticCsvBatchImporter.ImportIntoDatasetAsync(dbContext, dataset, csvContent, cancellationToken);
         return Ok(new { imported });
     }
 
     [HttpPost("{datasetId:guid}/samples/import-csv-file")]
     [Authorize(Roles = "Admin,Expert")]
     [Consumes("multipart/form-data")]
+    [RequestSizeLimit(128 * 1024 * 1024)]
     public async Task<ActionResult<object>> ImportCsvFile(Guid datasetId, IFormFile file, CancellationToken cancellationToken)
     {
         if (file is null || file.Length == 0)
@@ -271,9 +283,16 @@ public sealed class DatasetsController(AppDbContext dbContext) : ControllerBase
             return BadRequest("CSV file is empty.");
         }
 
+        var dataset = await dbContext.Datasets.FirstOrDefaultAsync(x => x.Id == datasetId, cancellationToken);
+        if (dataset is null)
+        {
+            return NotFound("Dataset not found.");
+        }
+
         await using var stream = file.OpenReadStream();
         using var reader = new StreamReader(stream);
         var csvContent = await reader.ReadToEndAsync(cancellationToken);
-        return await ImportCsv(datasetId, csvContent, cancellationToken);
+        var imported = await AcousticCsvBatchImporter.ImportIntoDatasetAsync(dbContext, dataset, csvContent, cancellationToken);
+        return Ok(new { imported });
     }
 }
