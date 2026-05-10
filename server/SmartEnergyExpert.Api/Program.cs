@@ -71,8 +71,18 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
-// Health: багато проб використовують HEAD, а не GET — лише MapGet дає 405 і сервіс «падає».
-static IResult Liveness() => Results.Ok();
+// HEAD — для проб; GET у браузері: короткий текст (раніше був порожній 200 → «біла сторінка»).
+static IResult Liveness(HttpRequest request)
+{
+    if (HttpMethods.IsHead(request.Method))
+        return Results.Ok();
+    return Results.Text(
+        "SmartEnergyExpert API (backend only).\n\n"
+        + "JSON: /api/...\n"
+        + "UI: Ivy client locally — BackendApi:BaseUrl → this host (HTTPS).\n",
+        "text/plain; charset=utf-8");
+}
+
 app.MapMethods("/", new[] { "GET", "HEAD" }, Liveness);
 app.MapMethods("/health", new[] { "GET", "HEAD" }, Liveness);
 
