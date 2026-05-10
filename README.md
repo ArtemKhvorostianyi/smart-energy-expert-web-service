@@ -1,156 +1,71 @@
 # Hydroacoustic Expert Web Service
 
-Local web service for comparing hydroacoustic modeling results with field experiment measurements.
+## 1. Призначення та склад програмного засобу
 
-## Technology
+Програмний засоб призначений для **порівняння результатів гідроакустичного моделювання з даними натурних вимірювань**: облік наборів даних («симуляція», «поле»), побудова висновків щодо відмінностей і рекомендацій для аналізу якості моделі.
 
-- Backend: ASP.NET Core Web API
-- UI: Ivy (single local client)
-- Database: PostgreSQL + Entity Framework Core
-- Auth: JWT on backend, Ivy Basic Auth in client
+Склад:
 
-## Core domain
+- **Серверна частина** — веб-API на ASP.NET Core (JSON, JWT), зберігання в **PostgreSQL** (Entity Framework Core, міграції).
+- **Клієнтська частина** — настільний застосунок на платформі **Ivy** (підключення до API; автентифікація Basic у клієнті відповідає обліковим записам, що створюються при першому старті API).
 
-- `Dataset` (simulation or field source)
-- `AcousticSample` (timestamped hydroacoustic point)
-- `ComparisonRun` (model-vs-field execution with metrics)
-- `DifferencePoint` (significant mismatches)
-- `Recommendation` (rule-based explanation and action)
+Кореневий URL API у продакшені не є повноцінним веб-інтерфейсом; основна робота з даними виконується через клієнт Ivy після вказання адреси API.
 
-## Localhost setup
+## 2. Запуск на локальній машині за допомогою Docker
 
-- API: `http://localhost:5109`
-- PostgreSQL: `localhost:5432`, database `hydroacoustic_expert`
-- Ivy client calls backend via `BackendApi:BaseUrl` (default `http://localhost:5109/`)
+**Вимоги:** встановлені Docker Engine і плагін Docker Compose v2.
 
-## Deploy (Sliplane: API у контейнері, Ivy локально)
-
-Обхід **`ivy deploy` + Sliplane** (якщо Ivy падає на `Failed to parse server description`): API деплоїш як звичайний Docker-сервіс у Sliplane, клієнт запускаєш **`ivy run`** на машині й направляєш на прод-API.
-
-### 1. PostgreSQL
-
-У Sliplane (або зовні) підніми Postgres, зніми рядок підключення Npgsql.
-
-### 2. Образ API
-
-З кореня репозиторію:
+**Кроки** (з кореня клонованого репозиторію):
 
 ```bash
-docker build -t hydro-api:local -f server/SmartEnergyExpert.Api/Dockerfile .
+cd deploy/department
+cp example.env .env
 ```
 
-Перевір локально (підстав свій рядок БД):
+У файлі `.env` задайте надійні значення `POSTGRES_PASSWORD` та `JWT_KEY` (не менше ~32 символів для ключа). За потреби змініть **`DEPARTMENT_HTTP_PORT`** (за замовчуванням `18080`) та **`DEPARTMENT_DB_PORT`** (`15432`), якщо ці порти на хості зайняті.
 
 ```bash
-docker run --rm -p 8080:8080 \
-  -e ConnectionStrings__DefaultConnection="Host=…;Port=5432;Database=…;Username=…;Password=…" \
-  -e Jwt__Key="мінімум-32-символи-випадкового-секрету" \
-  hydro-api:local
+docker compose up -d --build
 ```
 
-API слухає **8080** (`ASPNETCORE_URLS` у Dockerfile).
+Перший запуск контейнерів виконує міграції та сиди в БД. Порт API на хості береться з `.env` (`DEPARTMENT_HTTP_PORT`, типово **18080**).
 
-### 3. Сервіс у Sliplane (UI)
+**API (Docker: PostgreSQL + веб-API)** — після `docker compose up` перевірка:
 
-1. Зайди в [Sliplane](https://sliplane.io/docs) → свій **сервер** → **New service** (або аналог для деплою контейнера).
-2. Варіанти образа:
-   - **Registry**: запуш `hydro-api:local` у GHCR / Docker Hub і вкажи образ у сервісі; або  
-   - **Build from Git**: репозиторій, **Dockerfile path** `server/SmartEnergyExpert.Api/Dockerfile`, **build context** — **корінь репозиторію** (`.` / default). Якщо в UI окреме поле «context», вкажи `/` або корінь, не лише `server/...`.
-3. У сервісі вистав **публічний порт** на контейнерний **8080** (або зміни `ASPNETCORE_URLS` і порт у Sliplane узгоджено).
-4. **Environment variables** для контейнера API:
+```bash
+curl -sf "http://localhost:18080/health"
+```
 
-   | Змінна | Призначення |
-   | -------- | ------------- |
-   | `ConnectionStrings__DefaultConnection` | Npgsql до Postgres |
-   | `Jwt__Key` | Довгий випадковий секрет (не `dev-only-…`) |
-   | `Jwt__Issuer` / `Jwt__Audience` | За потреби; інакше дефолти з `Program.cs` |
+Якщо змінено `DEPARTMENT_HTTP_PORT`, підставте його замість `18080`.
 
-   **Postgres:** у змінній `ConnectionStrings__DefaultConnection` поле **`Host` не може бути `localhost`** всередині контейнера API — це сам контейнер, не база. Використай **хост Postgres у Sliplane** (внутрішній hostname сервісу БД, наприклад з екрана того ж проєкту/мережі). Приклад: `Host=імя-сервісу-postgres;Port=5432;Database=hydroacoustic_expert;Username=…;Password=…`.
+Зупинка стека:
 
-   Якщо в логах досі **`tcp://localhost:5432`** — змінна **не потрапляє в контейнер API**: перевір ім’я (**два** підкреслення: `ConnectionStrings__DefaultConnection`), що вона в **сервісі web API**, а не лише в Postgres, і зроби redeploy. У Production без цієї змінної застосунок падає на старті з явним повідомленням (після оновлення коду з репо).
+```bash
+cd deploy/department
+docker compose down
+```
 
-5. Після старту перевір у браузері `https://<твій-api-хост>/` (або health, якщо додаси endpoint). Логін клієнта — той самий Basic/JWT, що й у сидів API (див. `DatabaseInitializer` / локальний пароль).
+(Повне видалення даних БД: `docker compose down -v`.)
 
-### 4. Локальний Ivy → прод API
+**Клієнт Ivy** (окремий термінал; потрібні .NET SDK та встановлена утиліта `ivy`). Підключення до API на тій самій машині (порт як у `.env`).
 
-У проєкті клієнта вже є **`client/appsettings.json`** (локальний `http://localhost:5109/`). Для прод-URL зручніше **user secrets** (не потрапляють у git):
+Встановлення Ivy CLI (одноразово, глобально):
+
+```bash
+dotnet tool install -g Ivy.Console
+```
+
+За наявності старої версії: `dotnet tool update -g Ivy.Console`. Далі:
 
 ```bash
 cd client
-dotnet user-secrets set "BackendApi:BaseUrl" "https://<твій-api-хост>/" --project SmartEnergyExpert.Client.csproj
-dotnet user-secrets set "BackendApi:Email" "<email з сидів або твій>" --project SmartEnergyExpert.Client.csproj
-dotnet user-secrets set "BackendApi:Password" "<пароль>" --project SmartEnergyExpert.Client.csproj
+dotnet user-secrets set "BackendApi:BaseUrl" "http://localhost:18080/" --project SmartEnergyExpert.Client.csproj
+dotnet user-secrets set "BackendApi:Email" "admin@smartenergy.local" --project SmartEnergyExpert.Client.csproj
+dotnet user-secrets set "BackendApi:Password" "Admin123!" --project SmartEnergyExpert.Client.csproj
 ivy auth add --provider Basic
 ivy run --browse
 ```
 
-Альтернатива — змінні середовища перед `ivy run` (подвійне підкреслення `__`):
+Облікові дані користувачів після сидів — у файлі **`server/SmartEnergyExpert.Api/Services/DatabaseInitializer.cs`** (за потреби змініть `Email`/`Password` у `user-secrets`).
 
-`BackendApi__BaseUrl`, `BackendApi__Email`, `BackendApi__Password`.
-
-Шаблон без секретів у репо: **`client/appsettings.Production.json.example`** → скопіюй у `appsettings.Production.json` (файл у `.gitignore`), якщо так зручніше ніж secrets.
-
-Документація Sliplane: [docs.sliplane.io](https://docs.sliplane.io). Про збій Ivy `ivy deploy` + Sliplane — issue з логом `-v` у підтримку Ivy.
-
-## Run locally
-
-```bash
-dotnet build SmartEnergyExpert.slnx
-dotnet run --project server/SmartEnergyExpert.Api
-```
-
-In another terminal:
-
-```bash
-cd client
-ivy auth add --provider Basic
-ivy run --browse
-```
-
-## API flow
-
-- `GET /api/datasets`
-- `POST /api/comparisons`
-- `GET /api/differences/{comparisonRunId}`
-- `GET /api/recommendations/{comparisonRunId}`
-
-## Seed data
-
-On first start the API runs migrations and seeds:
-
-- default users/roles;
-- synthetic simulation dataset;
-- synthetic field dataset;
-- paired acoustic samples for immediate comparison testing.
-
-## Presentation Script (What to Say)
-
-Use this short script during your demo:
-
-1. **Problem statement**
-   - "This system compares hydroacoustic simulation output with field experiment measurements."
-   - "The goal is to detect significant mismatches and explain why they may happen."
-
-2. **Data setup**
-   - "I select one simulation dataset and one field dataset."
-   - "I can save this setup as a preset and reuse it for repeated experiments."
-
-3. **Comparison run**
-   - "Now I run model-vs-field comparison."
-   - "The backend computes MAE, RMSE, MRE, P95, and counts significant points."
-
-4. **Interpretation**
-   - "Low metrics mean good model adequacy."
-   - "Higher metrics and severity distribution indicate where model tuning is required."
-
-5. **Top differences and recommendations**
-   - "The system shows top mismatched points with timestamps and severity."
-   - "It provides recommendation codes and suggested actions for diagnostics."
-
-6. **Charts**
-   - "Bar chart summarizes global quality metrics."
-   - "Line chart shows relative/absolute error behavior."
-   - "Pie chart shows severity distribution across top differences."
-
-7. **Conclusion**
-   - "This gives a practical decision-support workflow for validating hydroacoustic models against field data."
+Через Compose та змінні: **`deploy/department/docker-compose.yml`**, **`deploy/department/example.env`**. Файл `.env` не комітують.
