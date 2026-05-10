@@ -1,7 +1,5 @@
 {
   "BackendApi": {
-    "BaseUrl": "https://YOUR-API-HOSTNAME/",
-    "Email": "admin@smartenergy.local",
-    "Password": "REPLACE_WITH_STRONG_PASSWORD"
+    "BaseUrl": "https://YOUR-API-HOSTNAME/"
   }
 }

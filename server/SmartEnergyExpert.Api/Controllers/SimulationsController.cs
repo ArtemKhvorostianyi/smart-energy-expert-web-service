@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SmartEnergyExpert.Api.Data;
@@ -10,14 +9,12 @@ namespace SmartEnergyExpert.Api.Controllers;
 /// <summary>Endpoints that synthesize datasets (not CRUD under <c>/api/datasets</c>).</summary>
 [ApiController]
 [Route("api/simulations")]
-[Authorize]
 public sealed class SimulationsController(
     AppDbContext dbContext,
     IParameterSyntheticSimulationService parameterSyntheticSimulation) : ControllerBase
 {
     /// <summary>Builds and persists a parameterized simulation dataset (tabular samples).</summary>
     [HttpPost("environment")]
-    [Authorize(Roles = "Admin,Expert")]
     public async Task<ActionResult<DatasetResponse>> GenerateFromEnvironmentParameters(
         [FromBody] GenerateSimulationDatasetRequest request,
         CancellationToken cancellationToken)

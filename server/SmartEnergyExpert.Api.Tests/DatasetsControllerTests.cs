@@ -1,5 +1,3 @@
-using System.Security.Claims;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SmartEnergyExpert.Api.Controllers;
@@ -18,22 +16,7 @@ public sealed class DatasetsControllerTests
             .UseInMemoryDatabase(name)
             .Options);
 
-    private static DatasetsController CreateController(AppDbContext db, bool withExpertRole = true)
-    {
-        var controller = new DatasetsController(db);
-        var claims = withExpertRole
-            ? new[] { new Claim(ClaimTypes.Role, "Expert") }
-            : Array.Empty<Claim>();
-        var identity = new ClaimsIdentity(claims, authenticationType: "Test");
-        controller.ControllerContext = new ControllerContext
-        {
-            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) }
-        };
-        return controller;
-    }
-
-    private static DatasetsController CreateControllerWithoutRole(AppDbContext db) =>
-        CreateController(db, withExpertRole: false);
+    private static DatasetsController CreateController(AppDbContext db) => new(db);
 
     [Fact]
     public async Task GetAll_returns_datasets_ordered_by_time_range_start_descending()
@@ -65,7 +48,7 @@ public sealed class DatasetsControllerTests
             });
         await db.SaveChangesAsync();
 
-        var sut = CreateControllerWithoutRole(db);
+        var sut = CreateController(db);
         var result = await sut.GetAll(CancellationToken.None);
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var list = Assert.IsAssignableFrom<IReadOnlyList<DatasetResponse>>(ok.Value);
@@ -172,7 +155,7 @@ public sealed class DatasetsControllerTests
     public async Task GetSignalOverview_unknown_dataset_returns_not_found()
     {
         await using var db = CreateDb($"ds-ov-miss-{Guid.NewGuid():N}");
-        var sut = CreateControllerWithoutRole(db);
+        var sut = CreateController(db);
         var result = await sut.GetSignalOverview(Guid.NewGuid(), CancellationToken.None);
         Assert.IsType<NotFoundObjectResult>(result.Result);
     }
@@ -192,7 +175,7 @@ public sealed class DatasetsControllerTests
         db.Datasets.Add(ds);
         await db.SaveChangesAsync();
 
-        var sut = CreateControllerWithoutRole(db);
+        var sut = CreateController(db);
         var result = await sut.GetSignalOverview(ds.Id, CancellationToken.None);
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var overview = Assert.IsType<DatasetSignalOverviewResponse>(ok.Value);
@@ -240,7 +223,7 @@ public sealed class DatasetsControllerTests
             });
         await db.SaveChangesAsync();
 
-        var sut = CreateControllerWithoutRole(db);
+        var sut = CreateController(db);
         var result = await sut.GetSignalOverview(ds.Id, CancellationToken.None);
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var overview = Assert.IsType<DatasetSignalOverviewResponse>(ok.Value);
@@ -330,7 +313,7 @@ public sealed class DatasetsControllerTests
 
         await db.SaveChangesAsync();
 
-        var sut = CreateControllerWithoutRole(db);
+        var sut = CreateController(db);
         var result = await sut.GetSamplesPage(ds.Id, offset: 1, limit: 2, CancellationToken.None);
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var page = Assert.IsType<DatasetSamplesPageResponse>(ok.Value);
