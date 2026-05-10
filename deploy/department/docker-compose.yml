@@ -1,0 +1,38 @@
+# Розгортання на сервері кафедри (Ubuntu + Docker): API + PostgreSQL.
+# Контекст білду — корінь репозиторію (див. context у сервісі api).
+name: smart-energy-expert-dept
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "${DEPARTMENT_DB_PORT}:5432"
+    volumes:
+      - dept_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  api:
+    build:
+      context: ../..
+      dockerfile: server/SmartEnergyExpert.Api/Dockerfile
+    ports:
+      - "${DEPARTMENT_HTTP_PORT}:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Jwt__Key: ${JWT_KEY}
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  dept_pg_data:
