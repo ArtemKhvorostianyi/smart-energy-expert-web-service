@@ -1,59 +1,46 @@
 # Hydroacoustic Expert Web Service
 
-## 1. Призначення та склад програмного засобу
+## 1. Призначення та склад
 
-Програмний засоб призначений для **порівняння результатів гідроакустичного моделювання з даними натурних вимірювань**: облік наборів даних («симуляція», «поле»), побудова висновків щодо відмінностей і рекомендацій для аналізу якості моделі.
+Програмний засіб для **порівняння результатів гідроакустичного моделювання з даними натурних вимірювань**: датасети («симуляція», «поле»), метрики, відмінності, рекомендації.
 
-Склад:
+- **Сервер** — ASP.NET Core Web API, **PostgreSQL** + EF Core. **Без автентифікації на API** (хто має доступ до хоста — використовує API; ізолюйте мережею).
+- **Клієнт** — Ivy-додаток у каталозі `client/`; звернення лише через **`BackendApi:BaseUrl`** у `client/appsettings.json` (або змінна оточення `BackendApi__BaseUrl`). Авторизація до API, user-secrets і Ivy-з’єднання під бекенд **не використовуються**.
 
-- **Серверна частина** — веб-API на ASP.NET Core (JSON), зберігання в **PostgreSQL** (Entity Framework Core, міграції). **Автентифікація та перевірка ролей на API вимкнені** (доступ відкритий усім, хто досягає хоста — обмежуйте доступ мережею або розгортанням усередині довіреного периметра).
-- **Клієнтська частина** — настільний застосунок на платформі **Ivy**; підключення до API лише через **`BackendApi:BaseUrl`** у `client/appsettings.json` (або змінна `BackendApi__BaseUrl`).
+## 2. Бекенд у Docker (`deploy/department`)
 
-Кореневий URL API не є повноцінним веб-інтерфейсом; основна робота з даними — у клієнті Ivy.
-
-## 2. Запуск на локальній машині за допомогою Docker
-
-**Вимоги:** Docker Engine і Docker Compose v2.
-
-**Кроки** (з кореня репозиторію):
+**Вимоги:** Docker Engine + Compose v2.
 
 ```bash
 cd deploy/department
 cp example.env .env
 ```
 
-У `.env` задайте надійний `POSTGRES_PASSWORD`. За потреби змініть **`DEPARTMENT_HTTP_PORT`** (типово **18080**) та **`DEPARTMENT_DB_PORT`** (`15432`).
+У `.env`: надійний `POSTGRES_PASSWORD`; за потреби `DEPARTMENT_HTTP_PORT` (типово **18080**), `DEPARTMENT_DB_PORT` (**15432**).
 
 ```bash
 docker compose up -d --build
 ```
 
-Перший запуск виконує міграції та сиди в БД (синтетичні датасети та пакетний CSV). Порт API на хості — з `.env`.
-
-**Перевірка API:**
+Перший старт — міграції та сиди (синтетика + bundled CSV).
 
 ```bash
 curl -sf "http://localhost:18080/health"
 ```
 
-(Підставте свій `DEPARTMENT_HTTP_PORT`.)
+Зупинка: `docker compose down` (з `-v` — видалиться volume Postgres).
 
-**Зупинка:**
+Шаблон: **`deploy/department/example.env`**; робочий **`.env`** не комітують.
 
-```bash
-cd deploy/department
-docker compose down
-```
+## 3. Клієнт Ivy
 
-(`docker compose down -v` — видалить volume з даними Postgres.)
+Інструмент (одноразово): `dotnet tool install -g Ivy.Console`.
 
-**Клієнт Ivy** (окремий термінал; .NET SDK + `Ivy.Console`):
+У **`client/appsettings.json`** задайте URL API (`http://localhost:18080/` після Compose з порту за замовчуванням, або `http://localhost:5109/` якщо API запущено локально через `dotnet run` без Docker).
 
 ```bash
-dotnet tool install -g Ivy.Console
 cd client
-# У client/appsettings.json вкажіть "BackendApi:BaseUrl" на API, напр. http://localhost:18080/
 ivy run --browse
 ```
 
-Файли деплою: **`deploy/department/docker-compose.yml`**, **`deploy/department/example.env`**. Файл `.env` не комітують.
+У застосунку: Панель, керування датасетами, середовищна симуляція, гідроакустичне порівняння тощо.
