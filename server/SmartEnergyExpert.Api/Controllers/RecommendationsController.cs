@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SmartEnergyExpert.Api.Data;
@@ -9,7 +8,6 @@ namespace SmartEnergyExpert.Api.Controllers;
 
 [ApiController]
 [Route("api/recommendations")]
-[Authorize]
 public sealed class RecommendationsController(AppDbContext dbContext) : ControllerBase
 {
     [HttpGet("{comparisonRunId:guid}")]

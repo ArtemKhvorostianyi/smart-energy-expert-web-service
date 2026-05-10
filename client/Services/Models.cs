@@ -2,24 +2,6 @@ using System.Text.Json.Serialization;
 
 namespace SmartEnergyExpert.Client.Services;
 
-public sealed class LoginRequestDto
-{
-    [JsonPropertyName("email")]
-    public string Email { get; init; } = string.Empty;
-
-    [JsonPropertyName("password")]
-    public string Password { get; init; } = string.Empty;
-}
-
-public sealed class LoginResponseDto
-{
-    [JsonPropertyName("accessToken")]
-    public string AccessToken { get; init; } = string.Empty;
-
-    [JsonPropertyName("expiresInSeconds")]
-    public int ExpiresInSeconds { get; init; }
-}
-
 public sealed class DatasetDto
 {
     [JsonPropertyName("id")]

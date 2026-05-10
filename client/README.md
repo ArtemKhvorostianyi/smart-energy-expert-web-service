@@ -1,22 +1,17 @@
 # Hydroacoustic Client (Ivy)
 
-Single localhost UI for running model-vs-field hydroacoustic comparison.
+UI для порівняння гідроакустичних моделей і польових даних.
 
-## Run locally
+## Запуск
+
+У **`appsettings.json`** задайте **`BackendApi:BaseUrl`** (наприклад `http://localhost:5109/` або `http://localhost:18080/` після Docker Compose).
 
 ```bash
-ivy auth add --provider Basic
 ivy run --browse
 ```
 
-## Included apps
+Авторизація до API **не використовується**; не потрібні user-secrets, Ivy connection BasicAuth для бекенда прибрано з репозиторію.
 
-- `Dashboard` with local workflow hints.
-- `Hydroacoustic Comparison` for selecting simulation and field datasets.
-- Result blocks for metrics, top differences, and recommendations.
+## Розділи
 
-## Backend assumptions
-
-- За замовчуванням API: `http://localhost:5109/` (`client/appsettings.json`).
-- Прод API: див. **Deploy (Sliplane: API у контейнері, Ivy локально)** у кореневому `README.md` — `dotnet user-secrets` для `BackendApi:BaseUrl` / Email / Password або змінні `BackendApi__*`.
-- Логін після сидів (як у `appsettings.json`): `admin@smartenergy.local` / `Admin123!` (інші ролі — у `DatabaseInitializer`).
+Панель, керування датасетами, середовищна симуляція, гідроакустичне порівняння тощо.

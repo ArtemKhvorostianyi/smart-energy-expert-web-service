@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SmartEnergyExpert.Api.Data;
@@ -8,7 +7,6 @@ namespace SmartEnergyExpert.Api.Controllers;
 
 [ApiController]
 [Route("api/differences")]
-[Authorize]
 public sealed class DifferencesController(AppDbContext dbContext) : ControllerBase
 {
     [HttpGet("{comparisonRunId:guid}")]

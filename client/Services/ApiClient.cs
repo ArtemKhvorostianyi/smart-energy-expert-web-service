@@ -21,7 +21,6 @@ public interface IApiClient
         CancellationToken cancellationToken = default);
     Task DeleteDatasetAsync(Guid datasetId, CancellationToken cancellationToken = default);
     Task<int> ImportCsvSamplesAsync(Guid datasetId, string csvContent, CancellationToken cancellationToken = default);
-    /// <summary>POST import-csv-file with multipart body (preferred for larger CSV).</summary>
     Task<int> ImportCsvFileMultipartAsync(Guid datasetId, byte[] utf8Csv, string fileName, CancellationToken cancellationToken = default);
     Task<int> ImportCsvFileAsync(Guid datasetId, string filePath, CancellationToken cancellationToken = default);
     Task<ComparisonResultDto> RunComparisonAsync(CreateComparisonRequestDto request, CancellationToken cancellationToken = default);
@@ -31,79 +30,106 @@ public sealed class ApiClient : IApiClient
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly HttpClient _httpClient;
-    private readonly SemaphoreSlim _authLock = new(1, 1);
-    private string? _accessToken;
-    private DateTimeOffset _accessTokenExpiresAt = DateTimeOffset.MinValue;
-    private readonly string _backendEmail;
-    private readonly string _backendPassword;
 
     public ApiClient(IConfiguration configuration)
     {
         var baseUrl = configuration["BackendApi:BaseUrl"] ?? "http://localhost:5109/";
-        _backendEmail = configuration["BackendApi:Email"] ?? "admin@smartenergy.local";
-        _backendPassword = configuration["BackendApi:Password"] ?? "Admin123!";
+        if (!baseUrl.EndsWith("/", StringComparison.Ordinal))
+        {
+            baseUrl += "/";
+        }
+
         _httpClient = new HttpClient { BaseAddress = new Uri(baseUrl), Timeout = TimeSpan.FromMinutes(30) };
     }
 
-    public async Task<IReadOnlyList<DatasetDto>> GetDatasetsAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<DatasetDto>> GetDatasetsAsync(CancellationToken cancellationToken = default) =>
+        GetDatasetsUncheckedAsync(cancellationToken);
+
+    public Task<DatasetSignalOverviewDto?> GetDatasetSignalOverviewAsync(
+        Guid datasetId,
+        CancellationToken cancellationToken = default) =>
+        GetDatasetSignalOverviewUncheckedAsync(datasetId, cancellationToken);
+
+    public Task<DatasetSamplesPageDto?> GetDatasetSamplesPageAsync(
+        Guid datasetId,
+        int offset = 0,
+        int limit = 200,
+        CancellationToken cancellationToken = default) =>
+        GetDatasetSamplesPageUncheckedAsync(datasetId, offset, limit, cancellationToken);
+
+    public Task<DatasetDto> CreateDatasetAsync(CreateDatasetRequestDto request, CancellationToken cancellationToken = default) =>
+        CreateDatasetUncheckedAsync(request, cancellationToken);
+
+    public Task<DatasetDto> GenerateSimulationDatasetAsync(
+        GenerateSimulationDatasetRequestDto request,
+        CancellationToken cancellationToken = default) =>
+        GenerateSimulationUncheckedAsync(request, cancellationToken);
+
+    public Task DeleteDatasetAsync(Guid datasetId, CancellationToken cancellationToken = default) =>
+        DeleteDatasetUncheckedAsync(datasetId, cancellationToken);
+
+    public Task<int> ImportCsvSamplesAsync(Guid datasetId, string csvContent, CancellationToken cancellationToken = default) =>
+        ImportCsvSamplesUncheckedAsync(datasetId, csvContent, cancellationToken);
+
+    public Task<int> ImportCsvFileMultipartAsync(Guid datasetId, byte[] utf8Csv, string fileName, CancellationToken cancellationToken = default) =>
+        ImportCsvFileMultipartUncheckedAsync(datasetId, utf8Csv, fileName, cancellationToken);
+
+    public Task<int> ImportCsvFileAsync(Guid datasetId, string filePath, CancellationToken cancellationToken = default) =>
+        ImportCsvFileUncheckedAsync(datasetId, filePath, cancellationToken);
+
+    public Task<ComparisonResultDto> RunComparisonAsync(CreateComparisonRequestDto request, CancellationToken cancellationToken = default) =>
+        RunComparisonUncheckedAsync(request, cancellationToken);
+
+    private async Task<IReadOnlyList<DatasetDto>> GetDatasetsUncheckedAsync(CancellationToken cancellationToken)
     {
-        await EnsureBackendAuthorizedAsync(cancellationToken);
         var data = await _httpClient.GetFromJsonAsync<List<DatasetDto>>("api/datasets", JsonOptions, cancellationToken);
         return data ?? [];
     }
 
-    public async Task<DatasetSignalOverviewDto?> GetDatasetSignalOverviewAsync(
+    private async Task<DatasetSignalOverviewDto?> GetDatasetSignalOverviewUncheckedAsync(
         Guid datasetId,
-        CancellationToken cancellationToken = default)
-    {
-        await EnsureBackendAuthorizedAsync(cancellationToken);
-        return await _httpClient.GetFromJsonAsync<DatasetSignalOverviewDto>(
+        CancellationToken cancellationToken) =>
+        await _httpClient.GetFromJsonAsync<DatasetSignalOverviewDto>(
             $"api/datasets/{datasetId}/overview",
             JsonOptions,
             cancellationToken);
-    }
 
-    public async Task<DatasetSamplesPageDto?> GetDatasetSamplesPageAsync(
+    private async Task<DatasetSamplesPageDto?> GetDatasetSamplesPageUncheckedAsync(
         Guid datasetId,
-        int offset = 0,
-        int limit = 200,
-        CancellationToken cancellationToken = default)
+        int offset,
+        int limit,
+        CancellationToken cancellationToken)
     {
-        await EnsureBackendAuthorizedAsync(cancellationToken);
         var uri = $"api/datasets/{datasetId}/samples?offset={offset}&limit={limit}";
         return await _httpClient.GetFromJsonAsync<DatasetSamplesPageDto>(uri, JsonOptions, cancellationToken);
     }
 
-    public async Task<DatasetDto> CreateDatasetAsync(CreateDatasetRequestDto request, CancellationToken cancellationToken = default)
+    private async Task<DatasetDto> CreateDatasetUncheckedAsync(CreateDatasetRequestDto request, CancellationToken cancellationToken)
     {
-        await EnsureBackendAuthorizedAsync(cancellationToken);
         var response = await _httpClient.PostAsJsonAsync("api/datasets", request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await ThrowUnlessSuccess(response, cancellationToken);
         return await response.Content.ReadFromJsonAsync<DatasetDto>(JsonOptions, cancellationToken)
                ?? throw new InvalidOperationException("Create dataset response payload is empty.");
     }
 
-    public async Task<DatasetDto> GenerateSimulationDatasetAsync(
+    private async Task<DatasetDto> GenerateSimulationUncheckedAsync(
         GenerateSimulationDatasetRequestDto request,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken)
     {
-        await EnsureBackendAuthorizedAsync(cancellationToken);
         var response = await _httpClient.PostAsJsonAsync("api/simulations/environment", request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await ThrowUnlessSuccess(response, cancellationToken);
         return await response.Content.ReadFromJsonAsync<DatasetDto>(JsonOptions, cancellationToken)
                ?? throw new InvalidOperationException("Generate simulation response payload is empty.");
     }
 
-    public async Task DeleteDatasetAsync(Guid datasetId, CancellationToken cancellationToken = default)
+    private async Task DeleteDatasetUncheckedAsync(Guid datasetId, CancellationToken cancellationToken)
     {
-        await EnsureBackendAuthorizedAsync(cancellationToken);
         var response = await _httpClient.DeleteAsync($"api/datasets/{datasetId}", cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await ThrowUnlessSuccess(response, cancellationToken);
     }
 
-    public async Task<int> ImportCsvSamplesAsync(Guid datasetId, string csvContent, CancellationToken cancellationToken = default)
+    private async Task<int> ImportCsvSamplesUncheckedAsync(Guid datasetId, string csvContent, CancellationToken cancellationToken)
     {
-        await EnsureBackendAuthorizedAsync(cancellationToken);
         using var plain = new StringContent(csvContent, Encoding.UTF8, "text/plain");
         var response = await _httpClient.PostAsync($"api/datasets/{datasetId}/samples/import-csv", plain, cancellationToken);
         await ThrowIfImportFailed(response, cancellationToken);
@@ -111,10 +137,13 @@ public sealed class ApiClient : IApiClient
         return payload is not null && payload.TryGetValue("imported", out var imported) ? imported : 0;
     }
 
-    public async Task<int> ImportCsvFileMultipartAsync(Guid datasetId, byte[] utf8Csv, string fileName, CancellationToken cancellationToken = default)
+    private async Task<int> ImportCsvFileMultipartUncheckedAsync(
+        Guid datasetId,
+        byte[] utf8Csv,
+        string fileName,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(utf8Csv);
-        await EnsureBackendAuthorizedAsync(cancellationToken);
         using var content = new MultipartFormDataContent();
         using var fileContent = new ByteArrayContent(utf8Csv);
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/csv");
@@ -126,7 +155,7 @@ public sealed class ApiClient : IApiClient
         return payload is not null && payload.TryGetValue("imported", out var imported) ? imported : 0;
     }
 
-    private static async Task ThrowIfImportFailed(HttpResponseMessage response, CancellationToken cancellationToken)
+    private async Task ThrowIfImportFailed(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         if (response.IsSuccessStatusCode)
         {
@@ -141,14 +170,13 @@ public sealed class ApiClient : IApiClient
     private static string TruncateForMessage(string s, int max = 480) =>
         s.Length <= max ? s : s[..max] + "…";
 
-    public async Task<int> ImportCsvFileAsync(Guid datasetId, string filePath, CancellationToken cancellationToken = default)
+    private async Task<int> ImportCsvFileUncheckedAsync(Guid datasetId, string filePath, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(filePath))
         {
             throw new InvalidOperationException("File path is empty.");
         }
 
-        await EnsureBackendAuthorizedAsync(cancellationToken);
         await using var fileStream = File.OpenRead(filePath.Trim());
         using var content = new MultipartFormDataContent();
         using var fileContent = new StreamContent(fileStream);
@@ -161,45 +189,25 @@ public sealed class ApiClient : IApiClient
         return payload is not null && payload.TryGetValue("imported", out var imported) ? imported : 0;
     }
 
-    public async Task<ComparisonResultDto> RunComparisonAsync(CreateComparisonRequestDto request, CancellationToken cancellationToken = default)
+    private async Task<ComparisonResultDto> RunComparisonUncheckedAsync(
+        CreateComparisonRequestDto request,
+        CancellationToken cancellationToken)
     {
-        await EnsureBackendAuthorizedAsync(cancellationToken);
         var response = await _httpClient.PostAsJsonAsync("api/comparisons", request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await ThrowUnlessSuccess(response, cancellationToken);
         return await response.Content.ReadFromJsonAsync<ComparisonResultDto>(JsonOptions, cancellationToken)
                ?? throw new InvalidOperationException("Comparison response payload is empty.");
     }
 
-    private async Task EnsureBackendAuthorizedAsync(CancellationToken cancellationToken)
+    private static async Task ThrowUnlessSuccess(HttpResponseMessage response, CancellationToken cancellationToken)
     {
-        if (!string.IsNullOrWhiteSpace(_accessToken) && _accessTokenExpiresAt > DateTimeOffset.UtcNow.AddMinutes(1))
+        if (response.IsSuccessStatusCode)
         {
             return;
         }
 
-        await _authLock.WaitAsync(cancellationToken);
-        try
-        {
-            if (!string.IsNullOrWhiteSpace(_accessToken) && _accessTokenExpiresAt > DateTimeOffset.UtcNow.AddMinutes(1))
-            {
-                return;
-            }
-
-            var response = await _httpClient.PostAsJsonAsync(
-                "api/auth/login",
-                new LoginRequestDto { Email = _backendEmail, Password = _backendPassword },
-                cancellationToken);
-            response.EnsureSuccessStatusCode();
-
-            var payload = await response.Content.ReadFromJsonAsync<LoginResponseDto>(JsonOptions, cancellationToken)
-                          ?? throw new InvalidOperationException("Backend login response payload is empty.");
-            _accessToken = payload.AccessToken;
-            _accessTokenExpiresAt = DateTimeOffset.UtcNow.AddSeconds(payload.ExpiresInSeconds);
-            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", payload.AccessToken);
-        }
-        finally
-        {
-            _authLock.Release();
-        }
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        throw new InvalidOperationException(
+            $"{(int)response.StatusCode}: {TruncateForMessage(body)}");
     }
 }

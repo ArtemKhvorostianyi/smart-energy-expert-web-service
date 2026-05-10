@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Globalization;
@@ -11,7 +10,6 @@ namespace SmartEnergyExpert.Api.Controllers;
 
 [ApiController]
 [Route("api/datasets")]
-[Authorize]
 public sealed class DatasetsController(AppDbContext dbContext) : ControllerBase
 {
     [HttpGet]
@@ -163,7 +161,6 @@ public sealed class DatasetsController(AppDbContext dbContext) : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = "Admin,Expert")]
     public async Task<ActionResult<DatasetResponse>> Create([FromBody] CreateDatasetRequest request, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Type))
@@ -196,7 +193,6 @@ public sealed class DatasetsController(AppDbContext dbContext) : ControllerBase
     }
 
     [HttpDelete("{datasetId:guid}")]
-    [Authorize(Roles = "Admin,Expert")]
     public async Task<ActionResult> Delete(Guid datasetId, CancellationToken cancellationToken)
     {
         var dataset = await dbContext.Datasets.FirstOrDefaultAsync(x => x.Id == datasetId, cancellationToken);
@@ -215,7 +211,6 @@ public sealed class DatasetsController(AppDbContext dbContext) : ControllerBase
     }
 
     [HttpPost("{datasetId:guid}/samples")]
-    [Authorize(Roles = "Admin,Expert")]
     public async Task<ActionResult> AddSample(Guid datasetId, [FromBody] AddAcousticSampleRequest request, CancellationToken cancellationToken)
     {
         var dataset = await dbContext.Datasets.FirstOrDefaultAsync(x => x.Id == datasetId, cancellationToken);
@@ -252,7 +247,6 @@ public sealed class DatasetsController(AppDbContext dbContext) : ControllerBase
     }
 
     [HttpPost("{datasetId:guid}/samples/import-csv")]
-    [Authorize(Roles = "Admin,Expert")]
     [Consumes("text/plain")]
     [RequestSizeLimit(128 * 1024 * 1024)]
     public async Task<ActionResult<object>> ImportCsv(Guid datasetId, [FromBody] string csvContent, CancellationToken cancellationToken)
@@ -273,7 +267,6 @@ public sealed class DatasetsController(AppDbContext dbContext) : ControllerBase
     }
 
     [HttpPost("{datasetId:guid}/samples/import-csv-file")]
-    [Authorize(Roles = "Admin,Expert")]
     [Consumes("multipart/form-data")]
     [RequestSizeLimit(128 * 1024 * 1024)]
     public async Task<ActionResult<object>> ImportCsvFile(Guid datasetId, IFormFile file, CancellationToken cancellationToken)

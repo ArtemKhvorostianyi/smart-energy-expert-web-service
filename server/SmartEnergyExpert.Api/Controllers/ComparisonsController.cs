@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SmartEnergyExpert.Api.Data;
@@ -12,13 +11,11 @@ namespace SmartEnergyExpert.Api.Controllers;
 
 [ApiController]
 [Route("api/comparisons")]
-[Authorize]
 public sealed class ComparisonsController(AppDbContext dbContext, IComparisonService comparisonService) : ControllerBase
 {
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
 
     [HttpPost]
-    [Authorize(Roles = "Admin,Expert")]
     public async Task<ActionResult<ComparisonResultResponse>> Run([FromBody] CreateComparisonRequest request, CancellationToken cancellationToken)
     {
         var simulationDataset = await dbContext.Datasets

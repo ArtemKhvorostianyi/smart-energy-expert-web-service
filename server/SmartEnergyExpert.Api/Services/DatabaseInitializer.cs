@@ -16,7 +16,6 @@ public sealed class DatabaseInitializer(IServiceProvider serviceProvider, ILogge
             var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
             await dbContext.Database.MigrateAsync(cancellationToken);
-            await SeedRolesAndUsersAsync(dbContext, cancellationToken);
             await SeedSyntheticDatasetsAsync(dbContext, cancellationToken);
 
             var hostEnvironment = scope.ServiceProvider.GetRequiredService<IHostEnvironment>();
@@ -27,50 +26,6 @@ public sealed class DatabaseInitializer(IServiceProvider serviceProvider, ILogge
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Database initialization skipped. Ensure PostgreSQL is running and connection string is correct.");
-        }
-    }
-
-    private static async Task SeedRolesAndUsersAsync(AppDbContext dbContext, CancellationToken cancellationToken)
-    {
-        if (!await dbContext.Roles.AnyAsync(cancellationToken))
-        {
-            var adminRole = new Role { Name = "Admin" };
-            var expertRole = new Role { Name = "Expert" };
-            var operatorRole = new Role { Name = "Operator" };
-
-            dbContext.Roles.AddRange(adminRole, expertRole, operatorRole);
-            await dbContext.SaveChangesAsync(cancellationToken);
-        }
-
-        if (!await dbContext.Users.AnyAsync(cancellationToken))
-        {
-            var roles = await dbContext.Roles.ToDictionaryAsync(x => x.Name, cancellationToken);
-
-            dbContext.Users.AddRange(
-                new User
-                {
-                    FullName = "System Admin",
-                    Email = "admin@smartenergy.local",
-                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin123!"),
-                    RoleId = roles["Admin"].Id
-                },
-                new User
-                {
-                    FullName = "Lead Expert",
-                    Email = "expert@smartenergy.local",
-                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("Expert123!"),
-                    RoleId = roles["Expert"].Id
-                },
-                new User
-                {
-                    FullName = "Field Operator",
-                    Email = "operator@smartenergy.local",
-                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("Operator123!"),
-                    RoleId = roles["Operator"].Id
-                }
-            );
-
-            await dbContext.SaveChangesAsync(cancellationToken);
         }
     }
 
