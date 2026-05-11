@@ -160,7 +160,7 @@ public sealed class EvaluationsApp : ViewBase
             return new Card(
                 Layout.Vertical().Gap(2)
                 | Text.H3("Огляд сигналу")
-                | Text.Muted("Логіка: датасет → короткий огляд тут → структура → «Запустити порівняння».")
+                | Text.Muted("Логіка: датасет - короткий огляд тут - структура - «Запустити порівняння».")
                 | (Layout.Horizontal().Gap(4)
                     | BuildExplorerHalfPanel("Симуляція (модель)", simulationExplorerQuery)
                     | BuildExplorerHalfPanel("Поле (вимір)", fieldExplorerQuery))
@@ -253,7 +253,7 @@ public sealed class EvaluationsApp : ViewBase
                    | Text.Block(durationText)
                    | Text.Block(
                        $"Діапазон частот: {FormatFrequencyRangeSummary(o.FrequencyMinHz, o.FrequencyMaxHz)} "
-                       + $"({o.DistinctFrequencyBins} різних смуг)")
+                       + $"({o.DistinctFrequencyBins} різних хвиль)")
                    | Text.Block($"Пікова амплітуда: {o.PeakAmplitudeDb:F2} дБ")
                    | Text.Block(
                        $"Шумова підкладка (≈10-й процентиль амплітуди): {o.NoiseFloorDb:F2} дБ, середній рівень: {o.MeanAmplitudeDb:F2} дБ")
@@ -302,7 +302,7 @@ public sealed class EvaluationsApp : ViewBase
 
                 var timelineNote = result.TotalComparedPoints > 0 && result.TimelineNormalizationApplied
                     ? Text.Muted(
-                        "Спаровування використало вирівнювання за прогресом експерименту: мітки кожного CSV зображені у u∈[0,1] від першого/останнього зразка, далі узгодження найближчими u між узгоджуваними смугами (спільний UTC не обов’язковий). Для суворого трекінгу краще однакова шкала часу UTC/секунд.")
+                        "Спаровування використало вирівнювання за прогресом експерименту: мітки кожного CSV зображені у u∈[0,1] від першого/останнього зразка, далі узгодження найближчими u між узгоджуваними хвилями (спільний UTC не обов’язковий). Для суворого трекінгу краще однакова шкала часу UTC/секунд.")
                     : (object)new Fragment();
 
                 return Layout.Vertical().Gap(2)
@@ -310,7 +310,7 @@ public sealed class EvaluationsApp : ViewBase
                            Layout.Vertical().Gap(2)
                            | Text.H3("Короткий підсумок")
                            | Text.Block(result.TotalComparedPoints == 0
-                               ? "Немає спарованих зразків після масштабування смуг (10^n Гц), найближчого збігу UTC та парування за прогресом (нормалізована частка u). Перевірте узгоджувані смуги та непусті інтервали; див. висновки нижче."
+                               ? "Немає спарованих зразків після масштабування хвиль (10^n Гц), найближчого збігу UTC та парування за прогресом (нормалізована частка u). Перевірте узгоджувані хвилі та непусті інтервали; див. висновки нижче."
                                : result.SignificantDifferenceCount == 0
                                    ? "Модель узгоджується з полем добре для цього запуску (лише на спарованих точках)."
                                    : "Модель потребує налаштування на частину порівнюваних точок.")
@@ -354,7 +354,7 @@ public sealed class EvaluationsApp : ViewBase
                        ? Text.Muted(
                            "Значення лічаться лише на спарованих точках після узгодження та перевірки перекриття.")
                        : Callout.Warning(
-                           "Порівнюваних точок: 0 — спочатку точний ряд, далі найближчі UTC із масштабом смуг (обмеження перекошення), потім парування за прогресом (мін |u_сим−u_поле|). Числа з’являться за наявності пар."))
+                           "Порівнюваних точок: 0 — спочатку точний ряд, далі найближчі UTC із масштабом хвиль (обмеження перекошення), потім парування за прогресом (мін |u_сим−u_поле|). Числа з’являться за наявності пар."))
                    | Text.Block("MAE — середня абсолютна помилка").Bold()
                    | Text.Muted(
                        "Середнє абсолютного зазору дБ між симулятором та полем на кожній спарованій точці. Типова величина помилки "
@@ -390,7 +390,7 @@ public sealed class EvaluationsApp : ViewBase
             Layout.Vertical().Gap(1)
             | Text.H4("Часові кластери (топ розбіжностей)")
             | (result.TemporalClusters.Length == 0
-                ? Text.Muted("Кластери з’являються коли група зразків має ту саму смугу й мітки часу з різницею ≈до 75 мс.")
+                ? Text.Muted("Кластери з’являються коли група зразків має ту саму хвилю й мітки часу з різницею ≈до 75 мс.")
                 : new List(result.TemporalClusters.Select(c =>
                     new ListItem(
                         $"Кластер №{c.Ordinal}: {c.TimeStart:HH:mm:ss.fff}–{c.TimeEnd:HH:mm:ss.fff} | {c.FrequencyBand} Гц | "
@@ -473,14 +473,14 @@ public sealed class EvaluationsApp : ViewBase
                    | new Card(
                        Layout.Vertical()
                        | Text.Block(
-                           $"Накладання: симуляція vs поле (основна контрольна смуга ~ {overlayBand} Гц)")
+                           $"Накладання: симуляція vs поле (основна контрольна хвиля ~ {overlayBand} Гц)")
                        | (overlayRows.Length == 0
                            ? Text.Muted("Немає точок для накладання в цьому запуску.")
                            : overlayRows.ToLineChart(
                                e => e.Time,
                                [e => e.Sum(v => v.Sim), e => e.Sum(v => v.Field)],
                                LineChartStyles.Dashboard))
-                       | Text.Muted("Дві криві амплітуд по головній смузі показують де модель збігається з записом."))
+                       | Text.Muted("Дві криві амплітуд по головній хвилі показують де модель збігається з записом."))
                    | new Card(
                        Layout.Vertical()
                        | Text.Block("Теплова карта невідповідностей (хвилина × частота, макс. відносна помилка)")

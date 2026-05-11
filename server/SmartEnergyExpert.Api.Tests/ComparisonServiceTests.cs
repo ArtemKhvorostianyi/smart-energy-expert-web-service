@@ -224,7 +224,7 @@ public sealed class ComparisonServiceTests
         Assert.NotEmpty(result.Recommendations);
     }
 
-    /// <summary>Точний збіг UTC × смуга × дБ дає нульові залишки (MRE залежить від формули відносної помилки).</summary>
+    /// <summary>Точний збіг UTC × хвиля × дБ дає нульові залишки (MRE залежить від формули відносної помилки).</summary>
     [Fact]
     public async Task CompareAsync_WhenAmplitudesMatchExactly_MaeIsZero()
     {
@@ -288,7 +288,7 @@ public sealed class ComparisonServiceTests
         Assert.False(result.Visualization.TimelineNormalizationApplied);
     }
 
-    /// <summary>Смуги без спільного фізичного узгодження (без масштабу десятка в межах допуску) — пар немає.</summary>
+    /// <summary>Хвилі без спільного фізичного узгодження (без масштабу десятка в межах допуску) — пар немає.</summary>
     [Fact]
     public async Task CompareAsync_WhenFrequencyBandsDoNotAlign_NoComparedPoints()
     {
@@ -347,7 +347,7 @@ public sealed class ComparisonServiceTests
         Assert.NotEmpty(result.Recommendations);
     }
 
-    /// <summary>Різні кодування смуги (×10) при спільному UTC — гнучке спаровування без нормалізації прогресу.</summary>
+    /// <summary>Різні кодування хвилі (×10) при спільному UTC — гнучке спаровування без нормалізації прогресу.</summary>
     [Fact]
     public async Task CompareAsync_WhenDecadeScaledBandsMatchSameUtc_PairsWithoutTimelineNormalization()
     {

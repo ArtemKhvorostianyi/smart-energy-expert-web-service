@@ -15,7 +15,7 @@ public sealed class EnvironmentSimulationApp : ViewBase
     private const float TabularPreviewHeightFraction = 0.2f;
 
     private static string FieldAlignIndependentOption() =>
-        $"— Незалежна сітка (тривалість і смуги нижче) — [{Guid.Empty}]";
+        $"— Незалежна сітка (тривалість і хвилі нижче) — [{Guid.Empty}]";
 
     private static string ToFieldMirrorOption(ClientServices.DatasetDto dataset) =>
         $"{dataset.Name} | {dataset.SourceSystem} | {dataset.SampleCount} зразків [{dataset.Id}]";
@@ -124,17 +124,17 @@ public sealed class EnvironmentSimulationApp : ViewBase
                | Text.P(
                    "Задайте параметри водяного стовпа та ґрунту дна; сервіс будує евристичну синтетичну SPL-серію "
                    + "(тип датасету simulation). Після імпорту вимірювань (зокрема довгих ARLUT CSV) як поле «field» нижче "
-                   + "за потреби віддзеркаліть його мітки часу та смуги частот — тоді в «Гідроакустичному порівнянні» узгодяться UTC × частота.")
+                   + "за потреби віддзеркаліть його мітки часу та хвилі частот — тоді в «Гідроакустичному порівнянні» узгодяться UTC × частота.")
 
                | new Card(
                    Layout.Vertical().Gap(1)
                    | Text.H3("Середовище")
                    | simName.ToTextInput().Placeholder("Базова назва симуляції (за потреби додається суфікс)")
-                   | Text.Muted("Віддзеркалити мітки часу та смуги з імпортованого поля (необов’язково)")
+                   | Text.Muted("Віддзеркалити мітки часу та хвилі з імпортованого поля (необов’язково)")
                    | alignFieldSelection.ToSelectInput(alignOptionsArray.ToArray())
                    | (mirrorsFieldDataset
                        ? Text.Muted(
-                           "На виході один зразок на акустичний ряд поля; тривалість і список смуг нижче ігноруються. "
+                           "На виході один зразок на акустичний ряд поля; тривалість і список хвиль нижче ігноруються. "
                            + "SPL замінюється евристикою; геометрія наслідує вимірювання.")
                        : new Fragment())
                    | Text.Muted("Глибина (м)")

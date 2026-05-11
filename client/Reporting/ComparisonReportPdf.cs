@@ -288,7 +288,7 @@ public static class ComparisonReportPdf
             o.Name,
             durationText,
             $"Діапазон частот: {FormatFrequencyRangeSummary(o.FrequencyMinHz, o.FrequencyMaxHz)} "
-            + $"({o.DistinctFrequencyBins} різних смуг)",
+            + $"({o.DistinctFrequencyBins} різних хвиль)",
             $"Пікова амплітуда: {o.PeakAmplitudeDb:F2} дБ",
             $"Шумова підкладка (≈10-й процентиль амплітуди): {o.NoiseFloorDb:F2} дБ, середній рівень: {o.MeanAmplitudeDb:F2} дБ",
             noiseLine
