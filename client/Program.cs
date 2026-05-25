@@ -5,6 +5,7 @@ using QuestPDF.Infrastructure;
 using SmartEnergyExpert.Client.Apps;
 using SmartEnergyExpert.Client.Connections.AppDb;
 using SmartEnergyExpert.Client.Services;
+using SmartEnergyExpert.Client.Services.Auth;
 
 QuestPDF.Settings.License = LicenseType.Community;
 
@@ -12,6 +13,7 @@ var server = new Server();
 server.UseCulture("uk-UA");
 server.AddConnectionsFromAssembly();
 server.AddAppsFromAssembly();
+server.UseAuth<AppBasicAuthProvider>(viewFactory: () => new AuthApp());
 server.UseAppShell(new AppShellSettings().DefaultApp<DashboardApp>().UseTabs(preventDuplicates: true));
 
 var configuration = new ConfigurationBuilder()

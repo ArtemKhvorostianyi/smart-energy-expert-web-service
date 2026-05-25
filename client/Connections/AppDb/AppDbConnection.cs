@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using SmartEnergyExpert.Client.Data;
 using SmartEnergyExpert.Client.Services;
+using SmartEnergyExpert.Client.Services.Auth;
 
 namespace SmartEnergyExpert.Client.Connections.AppDb;
 
@@ -41,6 +42,7 @@ public sealed class AppDbConnection : IConnection, IHaveSecrets
         server.Services.AddScoped<IComparisonService, ComparisonService>();
         server.Services.AddScoped<IParameterSyntheticSimulationService, ParameterSyntheticSimulationService>();
         server.Services.AddScoped<IApiClient, HydroacousticService>();
+        server.Services.AddSingleton<UserAccountService>();
     }
 
     public async Task<(bool ok, string? message)> TestConnection(IConfiguration config)

@@ -1,4 +1,5 @@
 using ClientServices = SmartEnergyExpert.Client.Services;
+using SmartEnergyExpert.Client.Services.Auth;
 
 namespace SmartEnergyExpert.Client.Apps;
 
@@ -15,6 +16,21 @@ public sealed class DatasetsManagementApp : ViewBase
     public override object? Build()
     {
         var api = UseService<ClientServices.IApiClient>();
+        var auth = UseService<IAuthService>();
+        var userQuery = UseQuery(
+            key: AuthViewHelper.UserQueryKey,
+            fetcher: async ct =>
+            {
+                if (auth.GetAuthSession()?.AuthToken is null)
+                {
+                    return (UserInfo?)null;
+                }
+
+                return auth is AuthService authService
+                    ? await authService.GetUserInfoAsync(ct)
+                    : null;
+            });
+        var access = AuthAccess.From(auth, userQuery.Value);
         var refreshTick = UseState(0);
         var status = UseState("");
         var deleteBusy = UseState(false);
@@ -70,7 +86,7 @@ public sealed class DatasetsManagementApp : ViewBase
                     Layout.Vertical().Gap(1)
                     | Text.H3(title)
                     | new Button("Видалити датасет")
-                        .Disabled(deleteBusy.Value)
+                        .Disabled(!access.CanWrite || deleteBusy.Value)
                         .OnClick(async () =>
                         {
                             deleteBusy.Set(true);
@@ -96,6 +112,7 @@ public sealed class DatasetsManagementApp : ViewBase
 
         return Layout.Vertical().Gap(2)
                | Text.H2("Керування датасетами")
+               | AuthAccess.RequireWriteGate(access, AuthViewHelper.WriteLockedMessage)
                | Text.Muted(
                    "Імпорт CSV створює новий датасет з іменем файлу. Нижче — усі датасети з PostgreSQL (засіяні, синтетичні, імпортовані).")
 
@@ -117,7 +134,7 @@ public sealed class DatasetsManagementApp : ViewBase
                            .Placeholder("Оберіть .csv симуляції…")
                        | new Button("Імпортувати CSV симуляції")
                            .Primary()
-                           .Disabled(busySimImport.Value || !simBytesReady)
+                           .Disabled(!access.CanWrite || busySimImport.Value || !simBytesReady)
                            .OnClick(async () => await ImportCsvBranchAsync(
                                api,
                                simCsvUpload,
@@ -135,7 +152,7 @@ public sealed class DatasetsManagementApp : ViewBase
                            .Placeholder("Оберіть польовий .csv…")
                        | new Button("Імпортувати польовий CSV")
                            .Primary()
-                           .Disabled(busyFieldImport.Value || !fieldBytesReady)
+                           .Disabled(!access.CanWrite || busyFieldImport.Value || !fieldBytesReady)
                            .OnClick(async () => await ImportCsvBranchAsync(
                                api,
                                fieldCsvUpload,

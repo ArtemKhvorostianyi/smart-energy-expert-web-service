@@ -1,5 +1,6 @@
 using ClientServices = SmartEnergyExpert.Client.Services;
 using SmartEnergyExpert.Client.Reporting;
+using SmartEnergyExpert.Client.Services.Auth;
 
 namespace SmartEnergyExpert.Client.Apps;
 
@@ -29,6 +30,21 @@ public sealed class EvaluationsApp : ViewBase
         public override object? Build()
         {
             var apiClient = UseService<ClientServices.IApiClient>();
+            var auth = UseService<IAuthService>();
+            var userQuery = UseQuery(
+                key: AuthViewHelper.UserQueryKey,
+                fetcher: async ct =>
+                {
+                    if (auth.GetAuthSession()?.AuthToken is null)
+                    {
+                        return (UserInfo?)null;
+                    }
+
+                    return auth is AuthService authService
+                        ? await authService.GetUserInfoAsync(ct)
+                        : null;
+                });
+            var access = AuthAccess.From(auth, userQuery.Value);
             var blades = UseContext<IBladeContext>();
             var refreshTick = UseState(0);
             var selectedSimulation = UseState("");
@@ -87,6 +103,11 @@ public sealed class EvaluationsApp : ViewBase
             return new Fragment()
                    | Layout.Vertical().Gap(2)
                        | Text.H2("Гідроакустичне порівняння")
+                       | (access.IsGuest
+                           ? Callout.Info("Гостьовий режим: порівняння доступне; PDF — після входу з повним профілем.")
+                           : access.CanWrite
+                               ? new Fragment()
+                               : Callout.Info("Увійдіть або зареєструйте профіль для PDF-звіту."))
                        | new Card(
                            Layout.Vertical().Gap(1)
                            | (Layout.Horizontal().Gap(2)
@@ -272,6 +293,21 @@ public sealed class EvaluationsApp : ViewBase
         {
             public override object? Build()
             {
+                var auth = UseService<IAuthService>();
+                var userQuery = UseQuery(
+                    key: (AuthViewHelper.UserQueryKey, "comparison-results"),
+                    fetcher: async ct =>
+                    {
+                        if (auth.GetAuthSession()?.AuthToken is null)
+                        {
+                            return (UserInfo?)null;
+                        }
+
+                        return auth is AuthService authService
+                            ? await authService.GetUserInfoAsync(ct)
+                            : null;
+                    });
+                var access = AuthAccess.From(auth, userQuery.Value);
                 var (mismatchSheetView, openMismatchSheet) = UseTrigger((IState<bool> isOpen) =>
                     isOpen.Value
                         ? new Sheet(
@@ -331,12 +367,14 @@ public sealed class EvaluationsApp : ViewBase
                                .OnClick(_ => openMetricsSheet())
                            | new Button("Відкрити графіки")
                                .OnClick(_ => openChartsBlade())
-                           | new ComparisonPdfDownloadView(new ComparisonReportPdfInput(
-                               result,
-                               simulationSelectionLabel,
-                               fieldSelectionLabel,
-                               simulationOverview,
-                               fieldOverview)))
+                           | (access.CanWrite
+                               ? new ComparisonPdfDownloadView(new ComparisonReportPdfInput(
+                                   result,
+                                   simulationSelectionLabel,
+                                   fieldSelectionLabel,
+                                   simulationOverview,
+                                   fieldOverview))
+                               : Callout.Info("Завантаження PDF доступне після входу (не гість).")))
                        | mismatchSheetView
                        | metricsSheetView;
             }

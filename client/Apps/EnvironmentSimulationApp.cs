@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using ClientServices = SmartEnergyExpert.Client.Services;
+using SmartEnergyExpert.Client.Services.Auth;
 
 namespace SmartEnergyExpert.Client.Apps;
 
@@ -60,6 +61,21 @@ public sealed class EnvironmentSimulationApp : ViewBase
     public override object? Build()
     {
         var api = UseService<ClientServices.IApiClient>();
+        var auth = UseService<IAuthService>();
+        var userQuery = UseQuery(
+            key: AuthViewHelper.UserQueryKey,
+            fetcher: async ct =>
+            {
+                if (auth.GetAuthSession()?.AuthToken is null)
+                {
+                    return (UserInfo?)null;
+                }
+
+                return auth is AuthService authService
+                    ? await authService.GetUserInfoAsync(ct)
+                    : null;
+            });
+        var access = AuthAccess.From(auth, userQuery.Value);
         var status = UseState("");
         var busy = UseState(false);
         var generatedSimulationRows = UseState(ImmutableArray<SimulatedDatasetGridRow>.Empty);
@@ -121,6 +137,7 @@ public sealed class EnvironmentSimulationApp : ViewBase
 
         return Layout.Vertical().Gap(2)
                | Text.H2("Симуляція на основі середовища")
+               | AuthAccess.RequireWriteGate(access, AuthViewHelper.WriteLockedMessage)
                | Text.P(
                    "Задайте параметри водяного стовпа та ґрунту дна; сервіс будує евристичну синтетичну SPL-серію "
                    + "(тип датасету simulation). Після імпорту вимірювань (зокрема довгих ARLUT CSV) як поле «field» нижче "
@@ -153,7 +170,7 @@ public sealed class EnvironmentSimulationApp : ViewBase
                            ? "Тривалість (хв) — не використовується при віддзеркаленні поля"
                            : "Тривалість (хв)")
                    | durationMin.ToNumberInput(min: 1, max: 240)
-                   | new Button("Створити датасет симуляції").Primary().Disabled(busy.Value).OnClick(async () =>
+                   | new Button("Створити датасет симуляції").Primary().Disabled(!access.CanWrite || busy.Value).OnClick(async () =>
                    {
                        busy.Set(true);
                        try

@@ -30,6 +30,17 @@ ivy run --browse
 
 При старті виконуються міграції EF та сиди (синтетика + bundled ARLUT CSV).
 
+### Автентифікація (Basic Auth)
+
+- Розділ **«Вхід»** — логін, реєстрація профілю (PostgreSQL), гостьовий режим.
+- **Гість:** `guest` / `explore` (див. `Guest:Password` у `appsettings.json`) — перегляд і порівняння без імпорту, симуляцій і PDF.
+- **Повний доступ** після реєстрації та входу email/паролем.
+
+Для production змініть у user-secrets або env:
+
+- `BasicAuth:HashSecret`, `BasicAuth:JwtSecret` (base64, ≥32 байт)
+- `Guest:Password`
+
 У застосунку: Панель, керування датасетами, середовищна симуляція, гідроакустичне порівняння тощо.
 
 ## 4. Docker (лише API + Postgres, legacy)

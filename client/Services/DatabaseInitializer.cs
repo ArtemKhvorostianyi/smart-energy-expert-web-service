@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SmartEnergyExpert.Client.Data;
 using SmartEnergyExpert.Client.Entities;
+using SmartEnergyExpert.Client.Services.Auth;
 
 namespace SmartEnergyExpert.Client.Services;
 
@@ -14,6 +15,7 @@ public sealed class DatabaseInitializer(IDbContextFactory<AppDbContext> dbFactor
             await using var dbContext = await dbFactory.CreateDbContextAsync(cancellationToken);
 
             await dbContext.Database.MigrateAsync(cancellationToken);
+            await SeedRolesAsync(dbContext, cancellationToken);
             await SeedSyntheticDatasetsAsync(dbContext, cancellationToken);
 
             await SeedBundledArlutPartAFieldDatasetAsync(dbContext, cancellationToken);
@@ -23,6 +25,19 @@ public sealed class DatabaseInitializer(IDbContextFactory<AppDbContext> dbFactor
             Console.Error.WriteLine(
                 $"[DatabaseInitializer] Skipped: {ex.Message}. Ensure PostgreSQL is running and ConnectionStrings:DefaultConnection is set.");
         }
+    }
+
+    private static async Task SeedRolesAsync(AppDbContext dbContext, CancellationToken cancellationToken)
+    {
+        foreach (var roleName in new[] { AuthRoles.Analyst, AuthRoles.Guest })
+        {
+            if (!await dbContext.Roles.AnyAsync(x => x.Name == roleName, cancellationToken))
+            {
+                dbContext.Roles.Add(new Role { Name = roleName });
+            }
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private static async Task SeedSyntheticDatasetsAsync(AppDbContext dbContext, CancellationToken cancellationToken)
