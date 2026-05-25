@@ -8,6 +8,7 @@ namespace SmartEnergyExpert.Client.Apps;
     title: "Вхід",
     group: ["Обліковий запис"],
     order: 0,
+    isVisible: false,
     searchHints: ["вхід", "login", "реєстрація", "пароль", "guest", "auth"])]
 public sealed class AuthApp : ViewBase
 {
@@ -16,6 +17,7 @@ public sealed class AuthApp : ViewBase
         var auth = UseService<IAuthService>();
         var configuration = UseService<IConfiguration>();
         var accounts = UseService<UserAccountService>();
+        var navigator = UseNavigation();
         var mode = UseState("login");
         var status = UseState("");
         var busy = UseState(false);
@@ -28,12 +30,19 @@ public sealed class AuthApp : ViewBase
         var regPassword = UseState("");
         var regPassword2 = UseState("");
 
+        UseEffect(
+            () =>
+            {
+                if (auth.GetAuthSession()?.AuthToken is not null)
+                {
+                    navigator.Navigate(typeof(AccountApp));
+                }
+            },
+            EffectTrigger.OnMount());
+
         if (auth.GetAuthSession()?.AuthToken is not null)
         {
-            return Layout.Vertical().Gap(2)
-                   | Text.H2("Ви вже увійшли")
-                   | Text.Muted("Перейдіть до «Профіль» для виходу або до розділів «Сервіс».")
-                   | Callout.Info("Після входу оновіть вкладки — з’явиться повний доступ.");
+            return null;
         }
 
         object body = mode.Value == "register"
