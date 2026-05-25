@@ -62,6 +62,7 @@ public sealed class EnvironmentSimulationApp : ViewBase
     {
         var api = UseService<ClientServices.IApiClient>();
         var auth = UseService<IAuthService>();
+        var users = UseService<UserAccountService>();
         var userQuery = UseQuery(
             key: AuthViewHelper.UserQueryKey,
             fetcher: async ct =>
@@ -91,11 +92,16 @@ public sealed class EnvironmentSimulationApp : ViewBase
         var bottomType = UseState("sand");
         var durationMin = UseState(60m);
 
-        var datasetsQuery =
-            UseQuery(key: $"{nameof(EnvironmentSimulationApp)}:datasets", fetcher: api.GetDatasetsAsync);
+        var datasetsQuery = UseQuery(
+            key: ($"{nameof(EnvironmentSimulationApp)}:datasets", userQuery.Value?.Email),
+            fetcher: async ct =>
+            {
+                var scope = await AuthViewHelper.ResolveDatasetScopeAsync(auth, users, userQuery.Value, ct);
+                return await api.GetDatasetsAsync(scope, ct);
+            });
 
         var samplesPageQuery = UseQuery(
-            key: ("env-sim-samples", previewSamplesDatasetId.Value, samplesOffset.Value),
+            key: ("env-sim-samples", previewSamplesDatasetId.Value, samplesOffset.Value, userQuery.Value?.Email),
             fetcher: async ct =>
             {
                 if (previewSamplesDatasetId.Value == Guid.Empty)
@@ -103,8 +109,10 @@ public sealed class EnvironmentSimulationApp : ViewBase
                     return (ClientServices.DatasetSamplesPageDto?)null;
                 }
 
+                var scope = await AuthViewHelper.ResolveDatasetScopeAsync(auth, users, userQuery.Value, ct);
                 return await api.GetDatasetSamplesPageAsync(
                     previewSamplesDatasetId.Value,
+                    scope,
                     samplesOffset.Value,
                     SamplePageSize,
                     ct);
@@ -190,7 +198,9 @@ public sealed class EnvironmentSimulationApp : ViewBase
                                DurationMinutes = (int)decimal.Round(decimal.Clamp(durationMin.Value, 1, 240)),
                                AlignToFieldDatasetId = alignId
                            };
-                           var ds = await api.GenerateSimulationDatasetAsync(dto);
+                           var scope = await AuthViewHelper.ResolveDatasetScopeAsync(
+                               auth, users, userQuery.Value, CancellationToken.None);
+                           var ds = await api.GenerateSimulationDatasetAsync(dto, scope);
                            generatedSimulationRows.Set(generatedSimulationRows.Value.Add(new SimulatedDatasetGridRow(
                                ds.Id,
                                ds.Name,

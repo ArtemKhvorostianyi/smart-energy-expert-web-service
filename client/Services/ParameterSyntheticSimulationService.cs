@@ -16,18 +16,21 @@ public sealed class ParameterSyntheticSimulationService : IParameterSyntheticSim
     public async Task<(Dataset Dataset, int SampleCount)> GenerateAndPersistAsync(
         AppDbContext dbContext,
         GenerateSimulationDatasetRequest request,
-        CancellationToken cancellationToken)
+        Guid? ownerUserId,
+        bool isSharedCatalog = false,
+        CancellationToken cancellationToken = default)
     {
         if (request.AlignToFieldDatasetId is { } fieldId)
         {
-            return await GenerateAlignedToFieldDatasetAsync(dbContext, request, fieldId, cancellationToken);
+            return await GenerateAlignedToFieldDatasetAsync(
+                dbContext, request, fieldId, ownerUserId, isSharedCatalog, cancellationToken);
         }
 
         var nameBase = string.IsNullOrWhiteSpace(request.Name)
             ? $"param-simulation-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}"
             : request.Name.Trim();
 
-        var name = await EnsureUniqueDatasetNameAsync(dbContext, nameBase, cancellationToken);
+        var name = await EnsureUniqueDatasetNameAsync(dbContext, nameBase, ownerUserId, cancellationToken);
 
         var duration = Math.Clamp(request.DurationMinutes, 1, 240);
         var bands = NormalizeBands(request.FrequencyBandsHz).ToArray();
@@ -52,7 +55,9 @@ public sealed class ParameterSyntheticSimulationService : IParameterSyntheticSim
                 : request.ModelVersion.Trim(),
             TimeRangeStart = start,
             TimeRangeEnd = end,
-            UpdatedAt = DateTimeOffset.UtcNow
+            UpdatedAt = DateTimeOffset.UtcNow,
+            OwnerUserId = ownerUserId,
+            IsGuestCatalog = isSharedCatalog
         };
 
         dbContext.Datasets.Add(dataset);
@@ -95,6 +100,8 @@ public sealed class ParameterSyntheticSimulationService : IParameterSyntheticSim
         AppDbContext dbContext,
         GenerateSimulationDatasetRequest request,
         Guid fieldDatasetId,
+        Guid? ownerUserId,
+        bool isSharedCatalog,
         CancellationToken cancellationToken)
     {
         var fieldMeta = await dbContext.Datasets.AsNoTracking()
@@ -145,7 +152,7 @@ public sealed class ParameterSyntheticSimulationService : IParameterSyntheticSim
         var nameBase = string.IsNullOrWhiteSpace(request.Name)
             ? $"param-simulation-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}"
             : request.Name.Trim();
-        var name = await EnsureUniqueDatasetNameAsync(dbContext, nameBase, cancellationToken);
+        var name = await EnsureUniqueDatasetNameAsync(dbContext, nameBase, ownerUserId, cancellationToken);
 
         var bottom = NormalizeBottomType(request.BottomType);
         var tempC = decimal.Clamp(request.TemperatureCelsius, -2m, 40m);
@@ -163,7 +170,9 @@ public sealed class ParameterSyntheticSimulationService : IParameterSyntheticSim
                 : request.ModelVersion.Trim(),
             TimeRangeStart = minTs,
             TimeRangeEnd = maxTs,
-            UpdatedAt = DateTimeOffset.UtcNow
+            UpdatedAt = DateTimeOffset.UtcNow,
+            OwnerUserId = ownerUserId,
+            IsGuestCatalog = isSharedCatalog
         };
 
         dbContext.Datasets.Add(dataset);
@@ -315,8 +324,9 @@ public sealed class ParameterSyntheticSimulationService : IParameterSyntheticSim
     internal static Task<string> EnsureUniqueDatasetNameAsync(
         AppDbContext dbContext,
         string nameBase,
+        Guid? ownerUserId,
         CancellationToken cancellationToken) =>
-        EnsureUniqueDatasetName(dbContext, nameBase, cancellationToken);
+        EnsureUniqueDatasetName(dbContext, nameBase, ownerUserId, cancellationToken);
 
     private static NoiseRipple NoiseRippleDb(decimal noiseAmbientDbRe1uPa)
     {
@@ -348,11 +358,13 @@ public sealed class ParameterSyntheticSimulationService : IParameterSyntheticSim
     private static async Task<string> EnsureUniqueDatasetName(
         AppDbContext db,
         string name,
+        Guid? ownerUserId,
         CancellationToken cancellationToken)
     {
         var candidate = name;
         var suffix = 0;
-        while (await db.Datasets.AsNoTracking().AnyAsync(x => x.Name == candidate, cancellationToken))
+        while (await db.Datasets.AsNoTracking()
+                   .AnyAsync(x => x.OwnerUserId == ownerUserId && x.Name == candidate, cancellationToken))
         {
             suffix++;
             candidate = $"{name}-{suffix:D4}";

@@ -25,11 +25,20 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             .IsUnique();
 
         modelBuilder.Entity<Dataset>()
-            .HasIndex(x => x.Name)
+            .HasIndex(x => new { x.OwnerUserId, x.Name })
             .IsUnique();
 
         modelBuilder.Entity<Dataset>()
             .HasIndex(x => new { x.Type, x.SourceSystem });
+
+        modelBuilder.Entity<Dataset>()
+            .HasIndex(x => x.IsGuestCatalog);
+
+        modelBuilder.Entity<Dataset>()
+            .HasOne(x => x.Owner)
+            .WithMany()
+            .HasForeignKey(x => x.OwnerUserId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<AcousticSample>()
             .HasOne(x => x.Dataset)

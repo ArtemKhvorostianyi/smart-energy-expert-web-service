@@ -12,5 +12,13 @@ public sealed class Dataset
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 
+    /// <summary>null — системний каталог (гостьова пара ARLUT).</summary>
+    public Guid? OwnerUserId { get; set; }
+
+    public User? Owner { get; set; }
+
+    /// <summary>Спільна демо-пара ARLUT (гість + аналітик для порівняння).</summary>
+    public bool IsGuestCatalog { get; set; }
+
     public ICollection<AcousticSample> Samples { get; set; } = new List<AcousticSample>();
 }

@@ -5,6 +5,7 @@ using SmartEnergyExpert.Client.Data;
 using SmartEnergyExpert.Client.DTOs;
 using SmartEnergyExpert.Client.Entities;
 using SmartEnergyExpert.Client.Mapping;
+using SmartEnergyExpert.Client.Services.Auth;
 
 namespace SmartEnergyExpert.Client.Services;
 
@@ -16,11 +17,12 @@ public sealed class HydroacousticService(
 {
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
 
-    public async Task<IReadOnlyList<DatasetDto>> GetDatasetsAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<DatasetDto>> GetDatasetsAsync(
+        DatasetAccessContext access,
+        CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-        var result = await db.Datasets
-            .AsNoTracking()
+        var result = await DatasetAccess.ApplyScope(db.Datasets.AsNoTracking(), access)
             .Select(x => new DatasetDto
             {
                 Id = x.Id,
@@ -39,10 +41,11 @@ public sealed class HydroacousticService(
 
     public async Task<DatasetSignalOverviewDto?> GetDatasetSignalOverviewAsync(
         Guid datasetId,
+        DatasetAccessContext access,
         CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-        var dataset = await db.Datasets.AsNoTracking()
+        var dataset = await DatasetAccess.ApplyScope(db.Datasets.AsNoTracking(), access)
             .FirstOrDefaultAsync(x => x.Id == datasetId, cancellationToken);
         if (dataset is null)
         {
@@ -119,12 +122,13 @@ public sealed class HydroacousticService(
 
     public async Task<DatasetSamplesPageDto?> GetDatasetSamplesPageAsync(
         Guid datasetId,
+        DatasetAccessContext access,
         int offset = 0,
         int limit = 200,
         CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-        var dataset = await db.Datasets.AsNoTracking()
+        var dataset = await DatasetAccess.ApplyScope(db.Datasets.AsNoTracking(), access)
             .FirstOrDefaultAsync(x => x.Id == datasetId, cancellationToken);
         if (dataset is null)
         {
@@ -167,8 +171,11 @@ public sealed class HydroacousticService(
 
     public async Task<DatasetDto> CreateDatasetAsync(
         CreateDatasetRequestDto request,
+        DatasetAccessContext access,
         CancellationToken cancellationToken = default)
     {
+        RequireRegisteredUser(access);
+
         if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Type))
         {
             throw new InvalidOperationException("Dataset name and type are required.");
@@ -180,7 +187,8 @@ public sealed class HydroacousticService(
             Name = request.Name.Trim(),
             Type = request.Type.Trim().ToLowerInvariant(),
             SourceSystem = string.IsNullOrWhiteSpace(request.SourceSystem) ? "unknown" : request.SourceSystem.Trim(),
-            Version = request.Version.Trim()
+            Version = request.Version.Trim(),
+            OwnerUserId = access.UserId
         };
 
         db.Datasets.Add(dataset);
@@ -201,12 +209,15 @@ public sealed class HydroacousticService(
 
     public async Task<DatasetDto> GenerateSimulationDatasetAsync(
         GenerateSimulationDatasetRequestDto request,
+        DatasetAccessContext access,
         CancellationToken cancellationToken = default)
     {
+        RequireRegisteredUser(access);
+
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
         if (request.AlignToFieldDatasetId is { } fieldDatasetId)
         {
-            var fieldDataset = await db.Datasets.AsNoTracking()
+            var fieldDataset = await DatasetAccess.ApplyScope(db.Datasets.AsNoTracking(), access)
                 .FirstOrDefaultAsync(x => x.Id == fieldDatasetId, cancellationToken);
             if (fieldDataset is null)
             {
@@ -229,6 +240,8 @@ public sealed class HydroacousticService(
         var (dataset, sampleCountReturned) = await simulationService.GenerateAndPersistAsync(
             db,
             ToGenerateRequest(request),
+            access.UserId,
+            isSharedCatalog: false,
             cancellationToken);
 
         return new DatasetDto
@@ -244,10 +257,16 @@ public sealed class HydroacousticService(
         };
     }
 
-    public async Task DeleteDatasetAsync(Guid datasetId, CancellationToken cancellationToken = default)
+    public async Task DeleteDatasetAsync(
+        Guid datasetId,
+        DatasetAccessContext access,
+        CancellationToken cancellationToken = default)
     {
+        RequireRegisteredUser(access);
+
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-        var dataset = await db.Datasets.FirstOrDefaultAsync(x => x.Id == datasetId, cancellationToken);
+        var dataset = await DatasetAccess.ApplyScope(db.Datasets, access)
+            .FirstOrDefaultAsync(x => x.Id == datasetId, cancellationToken);
         if (dataset is null)
         {
             throw new InvalidOperationException("Dataset not found.");
@@ -264,23 +283,26 @@ public sealed class HydroacousticService(
     public Task<int> ImportCsvSamplesAsync(
         Guid datasetId,
         string csvContent,
+        DatasetAccessContext access,
         CancellationToken cancellationToken = default) =>
-        ImportCsvCoreAsync(datasetId, csvContent, cancellationToken);
+        ImportCsvCoreAsync(datasetId, csvContent, access, cancellationToken);
 
     public Task<int> ImportCsvFileMultipartAsync(
         Guid datasetId,
         byte[] utf8Csv,
         string fileName,
+        DatasetAccessContext access,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(utf8Csv);
         var csv = Encoding.UTF8.GetString(utf8Csv);
-        return ImportCsvCoreAsync(datasetId, csv, cancellationToken);
+        return ImportCsvCoreAsync(datasetId, csv, access, cancellationToken);
     }
 
     public async Task<int> ImportCsvFileAsync(
         Guid datasetId,
         string filePath,
+        DatasetAccessContext access,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(filePath))
@@ -289,19 +311,19 @@ public sealed class HydroacousticService(
         }
 
         var csv = await File.ReadAllTextAsync(filePath.Trim(), cancellationToken);
-        return await ImportCsvCoreAsync(datasetId, csv, cancellationToken);
+        return await ImportCsvCoreAsync(datasetId, csv, access, cancellationToken);
     }
 
     public async Task<ComparisonResultDto> RunComparisonAsync(
         CreateComparisonRequestDto request,
+        DatasetAccessContext access,
         CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-        var simulationDataset = await db.Datasets
-            .AsNoTracking()
+        var scoped = DatasetAccess.ApplyScope(db.Datasets.AsNoTracking(), access);
+        var simulationDataset = await scoped
             .FirstOrDefaultAsync(x => x.Id == request.SimulationDatasetId && x.Type == "simulation", cancellationToken);
-        var fieldDataset = await db.Datasets
-            .AsNoTracking()
+        var fieldDataset = await scoped
             .FirstOrDefaultAsync(x => x.Id == request.FieldDatasetId && x.Type == "field", cancellationToken);
 
         if (simulationDataset is null || fieldDataset is null)
@@ -351,6 +373,7 @@ public sealed class HydroacousticService(
     private async Task<int> ImportCsvCoreAsync(
         Guid datasetId,
         string csvContent,
+        DatasetAccessContext access,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(csvContent))
@@ -358,14 +381,25 @@ public sealed class HydroacousticService(
             throw new InvalidOperationException("CSV content is empty.");
         }
 
+        RequireRegisteredUser(access);
+
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-        var dataset = await db.Datasets.FirstOrDefaultAsync(x => x.Id == datasetId, cancellationToken);
+        var dataset = await DatasetAccess.ApplyScope(db.Datasets, access)
+            .FirstOrDefaultAsync(x => x.Id == datasetId, cancellationToken);
         if (dataset is null)
         {
             throw new InvalidOperationException("Dataset not found.");
         }
 
         return await AcousticCsvBatchImporter.ImportIntoDatasetAsync(db, dataset, csvContent, cancellationToken);
+    }
+
+    private static void RequireRegisteredUser(DatasetAccessContext access)
+    {
+        if (access.IsGuest || access.UserId is null)
+        {
+            throw new InvalidOperationException("Операція доступна лише зареєстрованому користувачу.");
+        }
     }
 
     private static GenerateSimulationDatasetRequest ToGenerateRequest(GenerateSimulationDatasetRequestDto dto) =>

@@ -17,6 +17,7 @@ public sealed class DatasetsManagementApp : ViewBase
     {
         var api = UseService<ClientServices.IApiClient>();
         var auth = UseService<IAuthService>();
+        var users = UseService<UserAccountService>();
         var userQuery = UseQuery(
             key: AuthViewHelper.UserQueryKey,
             fetcher: async ct =>
@@ -45,8 +46,12 @@ public sealed class DatasetsManagementApp : ViewBase
         var fieldUploadCore = UseUpload(MemoryStreamUploadHandler.Create(fieldCsvUpload));
 
         var datasetsQuery = UseQuery(
-            key: (nameof(DatasetsManagementApp), refreshTick.Value),
-            fetcher: async ct => await api.GetDatasetsAsync(ct));
+            key: (nameof(DatasetsManagementApp), refreshTick.Value, userQuery.Value?.Email),
+            fetcher: async ct =>
+            {
+                var scope = await AuthViewHelper.ResolveDatasetScopeAsync(auth, users, userQuery.Value, ct);
+                return await api.GetDatasetsAsync(scope, ct);
+            });
 
         var simUpload = simUploadCore
             .Accept("text/csv,.csv,text/plain")
@@ -92,7 +97,9 @@ public sealed class DatasetsManagementApp : ViewBase
                             deleteBusy.Set(true);
                             try
                             {
-                                await api.DeleteDatasetAsync(id);
+                                var scope = await AuthViewHelper.ResolveDatasetScopeAsync(
+                                    auth, users, userQuery.Value, CancellationToken.None);
+                                await api.DeleteDatasetAsync(id, scope);
                                 refreshTick.Set(refreshTick.Value + 1);
                                 status.Set($"Видалено «{title}».");
                             }
@@ -137,6 +144,9 @@ public sealed class DatasetsManagementApp : ViewBase
                            .Disabled(!access.CanWrite || busySimImport.Value || !simBytesReady)
                            .OnClick(async () => await ImportCsvBranchAsync(
                                api,
+                               auth,
+                               users,
+                               userQuery.Value,
                                simCsvUpload,
                                "simulation",
                                busySimImport,
@@ -155,6 +165,9 @@ public sealed class DatasetsManagementApp : ViewBase
                            .Disabled(!access.CanWrite || busyFieldImport.Value || !fieldBytesReady)
                            .OnClick(async () => await ImportCsvBranchAsync(
                                api,
+                               auth,
+                               users,
+                               userQuery.Value,
                                fieldCsvUpload,
                                "field",
                                busyFieldImport,
@@ -172,6 +185,9 @@ public sealed class DatasetsManagementApp : ViewBase
 
     private static async Task ImportCsvBranchAsync(
         ClientServices.IApiClient api,
+        IAuthService auth,
+        UserAccountService users,
+        UserInfo? userInfo,
         IState<FileUpload<byte[]>?> fileState,
         string datasetType,
         IState<bool> busy,
@@ -196,16 +212,20 @@ public sealed class DatasetsManagementApp : ViewBase
         busy.Set(true);
         try
         {
-            var created = await api.CreateDatasetAsync(new ClientServices.CreateDatasetRequestDto
-            {
-                Name = datasetName,
-                Type = datasetType,
-                SourceSystem = CsvImportSource,
-                Version = "v1"
-            });
+            var scope = await AuthViewHelper.ResolveDatasetScopeAsync(auth, users, userInfo, CancellationToken.None);
+            var created = await api.CreateDatasetAsync(
+                new ClientServices.CreateDatasetRequestDto
+                {
+                    Name = datasetName,
+                    Type = datasetType,
+                    SourceSystem = CsvImportSource,
+                    Version = "v1"
+                },
+                scope);
 
             var payload = StripUtf8Bom(bytes);
-            var n = await api.ImportCsvFileMultipartAsync(created.Id, payload, Path.GetFileName(rawName));
+            var n = await api.ImportCsvFileMultipartAsync(
+                created.Id, payload, Path.GetFileName(rawName), scope);
             refreshTick.Set(refreshTick.Value + 1);
             clearFile();
 

@@ -9,6 +9,12 @@ using SmartEnergyExpert.Client.Services.Auth;
 
 QuestPDF.Settings.License = LicenseType.Community;
 
+// macOS AirPlay Receiver займає *:5000; без цього localhost:5000 дає HTTP 403 (AirTunes), не Ivy.
+if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("PORT")))
+{
+    Environment.SetEnvironmentVariable("PORT", "5010");
+}
+
 var server = new Server();
 server.UseCulture("uk-UA");
 server.AddConnectionsFromAssembly();

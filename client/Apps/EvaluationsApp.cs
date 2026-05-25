@@ -31,6 +31,15 @@ public sealed class EvaluationsApp : ViewBase
         {
             var apiClient = UseService<ClientServices.IApiClient>();
             var auth = UseService<IAuthService>();
+            var users = UseService<UserAccountService>();
+            var blades = UseContext<IBladeContext>();
+            var refreshTick = UseState(0);
+            var selectedSimulation = UseState("");
+            var selectedField = UseState("");
+            var topN = UseState(15m);
+            var status = UseState("");
+            var result = UseState<ClientServices.ComparisonResultDto?>(null);
+
             var userQuery = UseQuery(
                 key: AuthViewHelper.UserQueryKey,
                 fetcher: async ct =>
@@ -44,20 +53,15 @@ public sealed class EvaluationsApp : ViewBase
                         ? await authService.GetUserInfoAsync(ct)
                         : null;
                 });
-            var access = AuthAccess.From(auth, userQuery.Value);
-            var blades = UseContext<IBladeContext>();
-            var refreshTick = UseState(0);
-            var selectedSimulation = UseState("");
-            var selectedField = UseState("");
-            var topN = UseState(15m);
-            var status = UseState("");
-            var result = UseState<ClientServices.ComparisonResultDto?>(null);
-
             var datasetsQuery = UseQuery(
-                key: (nameof(WorkspaceBlade), refreshTick.Value),
-                fetcher: async ct => await apiClient.GetDatasetsAsync(ct));
+                key: (nameof(WorkspaceBlade), refreshTick.Value, userQuery.Value?.Email),
+                fetcher: async ct =>
+                {
+                    var scope = await AuthViewHelper.ResolveDatasetScopeAsync(auth, users, userQuery.Value, ct);
+                    return await apiClient.GetDatasetsAsync(scope, ct);
+                });
             var simulationExplorerQuery = UseQuery(
-                key: ("sim-signal-explorer", refreshTick.Value, selectedSimulation.Value),
+                key: ("sim-signal-explorer", refreshTick.Value, selectedSimulation.Value, userQuery.Value?.Email),
                 fetcher: async ct =>
                 {
                     var id = TryParseDatasetId(selectedSimulation.Value);
@@ -66,10 +70,11 @@ public sealed class EvaluationsApp : ViewBase
                         return (ClientServices.DatasetSignalOverviewDto?)null;
                     }
 
-                    return await apiClient.GetDatasetSignalOverviewAsync(id, ct);
+                    var scope = await AuthViewHelper.ResolveDatasetScopeAsync(auth, users, userQuery.Value, ct);
+                    return await apiClient.GetDatasetSignalOverviewAsync(id, scope, ct);
                 });
             var fieldExplorerQuery = UseQuery(
-                key: ("field-signal-explorer", refreshTick.Value, selectedField.Value),
+                key: ("field-signal-explorer", refreshTick.Value, selectedField.Value, userQuery.Value?.Email),
                 fetcher: async ct =>
                 {
                     var id = TryParseDatasetId(selectedField.Value);
@@ -78,11 +83,44 @@ public sealed class EvaluationsApp : ViewBase
                         return (ClientServices.DatasetSignalOverviewDto?)null;
                     }
 
-                    return await apiClient.GetDatasetSignalOverviewAsync(id, ct);
+                    var scope = await AuthViewHelper.ResolveDatasetScopeAsync(auth, users, userQuery.Value, ct);
+                    return await apiClient.GetDatasetSignalOverviewAsync(id, scope, ct);
                 });
+
+            UseEffect(
+                () =>
+                {
+                    var datasets = datasetsQuery.Value ?? [];
+                    var simOpts = datasets.Where(x => IsSimulationType(x.Type)).Select(ToOption).ToArray();
+                    var fieldOpts = datasets.Where(x => IsFieldType(x.Type)).Select(ToOption).ToArray();
+                    if (datasetsQuery.Loading || simOpts.Length == 0 || fieldOpts.Length == 0)
+                    {
+                        return;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(selectedSimulation.Value))
+                    {
+                        var simPick = simOpts.FirstOrDefault(o =>
+                            o.Contains(SharedArlutCatalog.SimulationName, StringComparison.Ordinal))
+                            ?? simOpts[0];
+                        selectedSimulation.Set(simPick);
+                    }
+
+                    if (string.IsNullOrWhiteSpace(selectedField.Value))
+                    {
+                        var fieldPick = fieldOpts.FirstOrDefault(o =>
+                            o.Contains(SharedArlutCatalog.FieldName, StringComparison.Ordinal))
+                            ?? fieldOpts[0];
+                        selectedField.Set(fieldPick);
+                    }
+                },
+                EffectTrigger.OnBuild());
+
+            var access = AuthAccess.From(auth, userQuery.Value);
             var datasets = datasetsQuery.Value ?? [];
             var simOptions = datasets.Where(x => IsSimulationType(x.Type)).Select(ToOption).ToArray();
             var fieldOptions = datasets.Where(x => IsFieldType(x.Type)).Select(ToOption).ToArray();
+
             var canRun = !datasetsQuery.Loading
                          && simOptions.Length > 0
                          && fieldOptions.Length > 0
@@ -120,17 +158,17 @@ public sealed class EvaluationsApp : ViewBase
                                ? Skeleton.Card()
                                : simOptions.Length == 0
                                    ? Callout.Warning(
-                                       "Немає датасетів симуляції. Створіть їх у «Середовищна симуляція» (тип simulation), потім оновіть список.")
+                                       "Немає датасетів симуляції. Перезапустіть застосунок (сид ARLUT) або створіть у «Середовищна симуляція».")
                                    : selectedSimulation.ToSelectInput(simOptions))
-                           | Text.Muted("Симуляція — лише тип simulation (гілка моделі). Не для CSV ARLUT як симуляція; вимірювання — нижче, поле.")
+                           | Text.Muted("Симуляція — тип simulation. Спільна пара ARLUT (~43 тис. зразків) доступна гостю та після входу.")
                            | (datasetsQuery.Loading
                                ? Skeleton.Card()
                                : fieldOptions.Length == 0
                                    ? Callout.Warning(
-                                       "Немає полових датасетів. Імпортуйте CSV у «Керування датасетами» або використайте засіяний ARLUT, потім оновіть.")
+                                       "Немає полових датасетів. Перезапустіть застосунок (сид ARLUT) або імпортуйте CSV у «Керування датасетами».")
                                    : selectedField.ToSelectInput(fieldOptions))
                            | Text.Muted(
-                               "Поле — вимірювання. При старті застосунку може підвантажуватися bundled CSV як «ARLUT 01 part A field stride2500»."))
+                               "Поле — вимірювання. Спільний ARLUT field stride2500 для порівняння з коробки."))
                        | BuildSignalExplorerCard(simulationExplorerQuery, fieldExplorerQuery)
                        | new Card(
                            Layout.Vertical()
@@ -147,12 +185,16 @@ public sealed class EvaluationsApp : ViewBase
                                        return;
                                    }
 
-                                   var latest = await apiClient.RunComparisonAsync(new ClientServices.CreateComparisonRequestDto
-                                   {
-                                       SimulationDatasetId = ParseDatasetId(selectedSimulation.Value),
-                                       FieldDatasetId = ParseDatasetId(selectedField.Value),
-                                       TopN = (int)decimal.Clamp(topN.Value, 5, 100)
-                                   });
+                                   var scope = await AuthViewHelper.ResolveDatasetScopeAsync(
+                                       auth, users, userQuery.Value, CancellationToken.None);
+                                   var latest = await apiClient.RunComparisonAsync(
+                                       new ClientServices.CreateComparisonRequestDto
+                                       {
+                                           SimulationDatasetId = ParseDatasetId(selectedSimulation.Value),
+                                           FieldDatasetId = ParseDatasetId(selectedField.Value),
+                                           TopN = (int)decimal.Clamp(topN.Value, 5, 100)
+                                       },
+                                       scope);
                                    result.Set(latest);
                                    status.Set("Порівняння виконано.");
                                }
@@ -307,7 +349,6 @@ public sealed class EvaluationsApp : ViewBase
                             ? await authService.GetUserInfoAsync(ct)
                             : null;
                     });
-                var access = AuthAccess.From(auth, userQuery.Value);
                 var (mismatchSheetView, openMismatchSheet) = UseTrigger((IState<bool> isOpen) =>
                     isOpen.Value
                         ? new Sheet(
@@ -330,6 +371,7 @@ public sealed class EvaluationsApp : ViewBase
                             .Width(Size.Fraction(2f / 3f))
                         : null);
 
+                var access = AuthAccess.From(auth, userQuery.Value);
                 var recommendationsStack = Layout.Vertical().Gap(2);
                 foreach (var rec in result.Recommendations)
                 {

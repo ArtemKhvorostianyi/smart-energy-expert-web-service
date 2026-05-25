@@ -151,9 +151,15 @@ namespace SmartEnergyExpert.Client.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<bool>("IsGuestCatalog")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<Guid?>("OwnerUserId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("SourceSystem")
                         .IsRequired()
@@ -178,7 +184,9 @@ namespace SmartEnergyExpert.Client.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Name")
+                    b.HasIndex("IsGuestCatalog");
+
+                    b.HasIndex("OwnerUserId", "Name")
                         .IsUnique();
 
                     b.HasIndex("Type", "SourceSystem");
@@ -377,6 +385,16 @@ namespace SmartEnergyExpert.Client.Migrations
                     b.Navigation("FieldDataset");
 
                     b.Navigation("SimulationDataset");
+                });
+
+            modelBuilder.Entity("SmartEnergyExpert.Client.Entities.Dataset", b =>
+                {
+                    b.HasOne("SmartEnergyExpert.Client.Entities.User", "Owner")
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("Owner");
                 });
 
             modelBuilder.Entity("SmartEnergyExpert.Client.Entities.DifferencePoint", b =>
