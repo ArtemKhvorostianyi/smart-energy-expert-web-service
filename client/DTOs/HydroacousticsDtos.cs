@@ -1,0 +1,173 @@
+namespace SmartEnergyExpert.Client.DTOs;
+
+public sealed class DatasetResponse
+{
+    public Guid Id { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string Type { get; init; } = string.Empty;
+    public string SourceSystem { get; init; } = string.Empty;
+    public string Version { get; init; } = string.Empty;
+    public DateTimeOffset TimeRangeStart { get; init; }
+    public DateTimeOffset TimeRangeEnd { get; init; }
+    public int SampleCount { get; init; }
+}
+
+/// <summary>Aggregates derived from acoustic samples for signal explorer / DSS inspect step.</summary>
+public sealed class DatasetSignalOverviewResponse
+{
+    public Guid DatasetId { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string Type { get; init; } = string.Empty;
+    public string SourceSystem { get; init; } = string.Empty;
+    public int SampleCount { get; init; }
+    public decimal DurationSeconds { get; init; }
+    public decimal FrequencyMinHz { get; init; }
+    public decimal FrequencyMaxHz { get; init; }
+    public int DistinctFrequencyBins { get; init; }
+    public DateTimeOffset FirstTimestamp { get; init; }
+    public DateTimeOffset LastTimestamp { get; init; }
+    public decimal PeakAmplitudeDb { get; init; }
+    /// <summary>Lower tail estimate (≈10th percentile of amplitude).</summary>
+    public decimal NoiseFloorDb { get; init; }
+    public decimal MeanAmplitudeDb { get; init; }
+    public decimal? MeanNoiseLevelDb { get; init; }
+}
+
+public sealed class AcousticSampleRowResponse
+{
+    public DateTimeOffset Timestamp { get; init; }
+    public decimal FrequencyBand { get; init; }
+    public decimal AmplitudeDb { get; init; }
+    public decimal DepthMeters { get; init; }
+    public decimal RangeMeters { get; init; }
+    public decimal? SoundSpeed { get; init; }
+    public decimal? NoiseLevelDb { get; init; }
+}
+
+public sealed class DatasetSamplesPageResponse
+{
+    public Guid DatasetId { get; init; }
+    public string DatasetName { get; init; } = string.Empty;
+    public int TotalCount { get; init; }
+    public int Offset { get; init; }
+    public int Limit { get; init; }
+    public IReadOnlyList<AcousticSampleRowResponse> Items { get; init; } = [];
+}
+
+public sealed class CreateDatasetRequest
+{
+    public string Name { get; init; } = string.Empty;
+    public string Type { get; init; } = string.Empty;
+    public string SourceSystem { get; init; } = string.Empty;
+    public string Version { get; init; } = "v1";
+}
+
+public sealed class GenerateSimulationDatasetRequest
+{
+    public string Name { get; init; } = "parameter-simulation";
+    public decimal DepthMeters { get; init; } = 60;
+    public decimal TemperatureCelsius { get; init; } = 12;
+    public decimal SalinityPsu { get; init; } = 35;
+    /// <summary>Environmental noise floor (negative dB re 1µPa illustrative scale).</summary>
+    public decimal NoiseLevelDb { get; init; } = -92;
+    /// <summary>For example sand, mud, silt, hard_rock.</summary>
+    public string BottomType { get; init; } = "sand";
+    public int DurationMinutes { get; init; } = 60;
+    public decimal[]? FrequencyBandsHz { get; init; }
+    public string? ModelVersion { get; init; }
+
+    /// <summary>
+    /// When set, builds one synthetic row per field sample (same timestamps and bands).
+    /// DurationMinutes / FrequencyBandsHz are ignored; SPL comes from env parameters.
+    /// </summary>
+    public Guid? AlignToFieldDatasetId { get; init; }
+}
+
+public sealed class AddAcousticSampleRequest
+{
+    public DateTimeOffset Timestamp { get; init; }
+    public decimal FrequencyBand { get; init; }
+    public decimal AmplitudeDb { get; init; }
+    public decimal DepthMeters { get; init; }
+    public decimal RangeMeters { get; init; }
+    public decimal? SoundSpeed { get; init; }
+    public decimal? NoiseLevelDb { get; init; }
+}
+
+public sealed class CreateComparisonRequest
+{
+    public Guid SimulationDatasetId { get; init; }
+    public Guid FieldDatasetId { get; init; }
+    public int TopN { get; init; } = 20;
+}
+
+public sealed class DifferencePointResponse
+{
+    public Guid Id { get; init; }
+    public DateTimeOffset Timestamp { get; init; }
+    public decimal FrequencyBand { get; init; }
+    public decimal SimulationValue { get; init; }
+    public decimal FieldValue { get; init; }
+    public decimal AbsoluteError { get; init; }
+    public decimal RelativeErrorPercent { get; init; }
+    public string Severity { get; init; } = string.Empty;
+    public string Explanation { get; init; } = string.Empty;
+}
+
+public sealed class RecommendationResponse
+{
+    public string ReasonCode { get; init; } = string.Empty;
+    public string Category { get; init; } = string.Empty;
+    public string InferenceMethod { get; init; } = string.Empty;
+    public string ConfidenceRationale { get; init; } = string.Empty;
+    public IReadOnlyList<string> EvidenceSignals { get; init; } = [];
+    public string Explanation { get; init; } = string.Empty;
+    public string SuggestedAction { get; init; } = string.Empty;
+    public decimal Confidence { get; init; }
+}
+
+public sealed class OverlaySeriesPointResponse
+{
+    public DateTimeOffset Timestamp { get; init; }
+    public decimal FrequencyBand { get; init; }
+    public decimal SimulationDb { get; init; }
+    public decimal FieldDb { get; init; }
+}
+
+public sealed class HeatmapCellResponse
+{
+    public string TimeBucket { get; init; } = string.Empty;
+    public decimal FrequencyBand { get; init; }
+    public decimal MaxRelativeErrorPercent { get; init; }
+}
+
+public sealed class DifferenceClusterResponse
+{
+    public int Ordinal { get; init; }
+    public DateTimeOffset TimeStart { get; init; }
+    public DateTimeOffset TimeEnd { get; init; }
+    public decimal FrequencyBand { get; init; }
+    public int PointCount { get; init; }
+    public decimal MeanRelativeErrorPercent { get; init; }
+}
+
+public sealed class ComparisonResultResponse
+{
+    /// <summary>
+    /// When true, pairing used normalized experiment progress (elapsed fraction inside each CSV span); wall-clock epochs need not coincide.
+    /// </summary>
+    public bool TimelineNormalizationApplied { get; init; }
+
+    public Guid ComparisonRunId { get; init; }
+    public decimal Mae { get; init; }
+    public decimal Rmse { get; init; }
+    public decimal MeanRelativeErrorPercent { get; init; }
+    public decimal P95AbsoluteError { get; init; }
+    public int TotalComparedPoints { get; init; }
+    public int SignificantDifferenceCount { get; init; }
+    public IReadOnlyList<DifferencePointResponse> TopDifferences { get; init; } = [];
+    public IReadOnlyList<OverlaySeriesPointResponse> OverlaySeries { get; init; } = [];
+    public IReadOnlyList<HeatmapCellResponse> MismatchHeatmap { get; init; } = [];
+    public IReadOnlyList<DifferenceClusterResponse> TemporalClusters { get; init; } = [];
+    public IReadOnlyList<RecommendationResponse> Recommendations { get; init; } = [];
+}

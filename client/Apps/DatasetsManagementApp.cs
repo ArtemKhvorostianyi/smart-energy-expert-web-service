@@ -53,7 +53,7 @@ public sealed class DatasetsManagementApp : ViewBase
         if (datasetsSorted.Length == 0 && !datasetsQuery.Loading && datasetsQuery.Error is null)
         {
             datasetsList = Text.Muted(
-                "Ще немає датасетів — імпортуйте CSV вище або ініціалізуйте дані через API.");
+                "Ще немає датасетів — імпортуйте CSV вище або дочекайтесь ініціалізації БД при старті.");
         }
         else if (datasetsSorted.Length == 0)
         {
@@ -97,7 +97,7 @@ public sealed class DatasetsManagementApp : ViewBase
         return Layout.Vertical().Gap(2)
                | Text.H2("Керування датасетами")
                | Text.Muted(
-                   "Імпорт CSV створює новий датасет з іменем файлу. Нижче — усі датасети з API (засіяні, синтетичні, імпортовані).")
+                   "Імпорт CSV створює новий датасет з іменем файлу. Нижче — усі датасети з PostgreSQL (засіяні, синтетичні, імпортовані).")
 
                | (datasetsQuery.Error is { } err ? Callout.Warning(err.Message) : new Fragment())
                | (datasetsQuery.Loading ? Callout.Info("Завантаження датасетів…") : new Fragment())

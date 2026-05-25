@@ -109,7 +109,7 @@ public sealed class EvaluationsApp : ViewBase
                                        "Немає полових датасетів. Імпортуйте CSV у «Керування датасетами» або використайте засіяний ARLUT, потім оновіть.")
                                    : selectedField.ToSelectInput(fieldOptions))
                            | Text.Muted(
-                               "Поле — вимірювання. При старті API може підвантажуватися файл data/ARLUT_01_partA_01_dataset_field_stride2500.csv як «ARLUT 01 part A field stride2500»."))
+                               "Поле — вимірювання. При старті застосунку може підвантажуватися bundled CSV як «ARLUT 01 part A field stride2500»."))
                        | BuildSignalExplorerCard(simulationExplorerQuery, fieldExplorerQuery)
                        | new Card(
                            Layout.Vertical()
