@@ -25,12 +25,14 @@ docker compose up -d postgres
 
 ```bash
 cd client
-ivy run --browse
+./run-dev.sh
 ```
 
-У терміналі з’явиться URL на кшталт **http://127.0.0.1:5010** — відкрийте саме його (**http**, не https).
+Або вручну (звільнить 5010, якщо лишився попередній процес):
 
-Якщо Chrome пише «Access to localhost was denied» / **HTTP 403**: на macOS порт 5000 зайнятий **AirPlay**, а не Ivy. У `Program.cs` для локального запуску встановлено `PORT=5010`; не відкривайте `localhost:5000`.
+```bash
+ivy run --port 5010 --browse --i-kill-for-this-port
+```
 
 ### Автентифікація (Basic Auth)
 

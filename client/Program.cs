@@ -1,5 +1,6 @@
 using System.Reflection;
 using Ivy;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using QuestPDF.Infrastructure;
 using SmartEnergyExpert.Client.Apps;
@@ -9,13 +10,21 @@ using SmartEnergyExpert.Client.Services.Auth;
 
 QuestPDF.Settings.License = LicenseType.Community;
 
-// macOS AirPlay Receiver займає *:5000; без цього localhost:5000 дає HTTP 403 (AirTunes), не Ivy.
-if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("PORT")))
+// macOS AirPlay Receiver займає *:5000 → HTTP 403. За замовчуванням 5010; поважаємо PORT / ivy run --port.
+static int ResolveDevPort()
 {
-    Environment.SetEnvironmentVariable("PORT", "5010");
+    if (int.TryParse(Environment.GetEnvironmentVariable("PORT"), out var fromEnv) && fromEnv is > 0 and not 5000)
+        return fromEnv;
+    return 5010;
 }
 
-var server = new Server();
+var devPort = ResolveDevPort();
+var listenUrl = $"http://127.0.0.1:{devPort}";
+Environment.SetEnvironmentVariable("PORT", devPort.ToString());
+Environment.SetEnvironmentVariable("ASPNETCORE_URLS", listenUrl);
+
+var server = new Server(new ServerArgs { Port = devPort });
+server.UseWebApplicationBuilder(builder => builder.WebHost.UseUrls(listenUrl));
 server.UseCulture("uk-UA");
 server.AddConnectionsFromAssembly();
 server.AddAppsFromAssembly();
@@ -31,4 +40,5 @@ var configuration = new ConfigurationBuilder()
 var dbFactory = new AppDbContextFactory(configuration);
 await new DatabaseInitializer(dbFactory).InitializeAsync(CancellationToken.None);
 
+Console.WriteLine($"Open the app at {listenUrl}");
 await server.RunAsync();

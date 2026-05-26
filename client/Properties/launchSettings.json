@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "SmartEnergyExpert.Client": {
+      "commandName": "Project",
+      "applicationUrl": "http://127.0.0.1:5010",
+      "environmentVariables": {
+        "ASPNETCORE_URLS": "http://127.0.0.1:5010",
+        "PORT": "5010"
+      }
+    }
+  }
+}
