@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using ClientServices = SmartEnergyExpert.Client.Services;
+using SmartEnergyExpert.Client.Services.Auth;
 
 namespace SmartEnergyExpert.Client.Apps;
 
@@ -60,6 +61,22 @@ public sealed class EnvironmentSimulationApp : ViewBase
     public override object? Build()
     {
         var api = UseService<ClientServices.IApiClient>();
+        var auth = UseService<IAuthService>();
+        var users = UseService<UserAccountService>();
+        var userQuery = UseQuery(
+            key: AuthViewHelper.UserQueryKey,
+            fetcher: async ct =>
+            {
+                if (auth.GetAuthSession()?.AuthToken is null)
+                {
+                    return (UserInfo?)null;
+                }
+
+                return auth is AuthService authService
+                    ? await authService.GetUserInfoAsync(ct)
+                    : null;
+            });
+        var access = AuthAccess.From(auth, userQuery.Value);
         var status = UseState("");
         var busy = UseState(false);
         var generatedSimulationRows = UseState(ImmutableArray<SimulatedDatasetGridRow>.Empty);
@@ -75,11 +92,16 @@ public sealed class EnvironmentSimulationApp : ViewBase
         var bottomType = UseState("sand");
         var durationMin = UseState(60m);
 
-        var datasetsQuery =
-            UseQuery(key: $"{nameof(EnvironmentSimulationApp)}:datasets", fetcher: api.GetDatasetsAsync);
+        var datasetsQuery = UseQuery(
+            key: ($"{nameof(EnvironmentSimulationApp)}:datasets", userQuery.Value?.Email),
+            fetcher: async ct =>
+            {
+                var scope = await AuthViewHelper.ResolveDatasetScopeAsync(auth, users, userQuery.Value, ct);
+                return await api.GetDatasetsAsync(scope, ct);
+            });
 
         var samplesPageQuery = UseQuery(
-            key: ("env-sim-samples", previewSamplesDatasetId.Value, samplesOffset.Value),
+            key: ("env-sim-samples", previewSamplesDatasetId.Value, samplesOffset.Value, userQuery.Value?.Email),
             fetcher: async ct =>
             {
                 if (previewSamplesDatasetId.Value == Guid.Empty)
@@ -87,8 +109,10 @@ public sealed class EnvironmentSimulationApp : ViewBase
                     return (ClientServices.DatasetSamplesPageDto?)null;
                 }
 
+                var scope = await AuthViewHelper.ResolveDatasetScopeAsync(auth, users, userQuery.Value, ct);
                 return await api.GetDatasetSamplesPageAsync(
                     previewSamplesDatasetId.Value,
+                    scope,
                     samplesOffset.Value,
                     SamplePageSize,
                     ct);
@@ -121,6 +145,7 @@ public sealed class EnvironmentSimulationApp : ViewBase
 
         return Layout.Vertical().Gap(2)
                | Text.H2("Симуляція на основі середовища")
+               | AuthAccess.RequireWriteGate(access, AuthViewHelper.WriteLockedMessage)
                | Text.P(
                    "Задайте параметри водяного стовпа та ґрунту дна; сервіс будує евристичну синтетичну SPL-серію "
                    + "(тип датасету simulation). Після імпорту вимірювань (зокрема довгих ARLUT CSV) як поле «field» нижче "
@@ -153,7 +178,7 @@ public sealed class EnvironmentSimulationApp : ViewBase
                            ? "Тривалість (хв) — не використовується при віддзеркаленні поля"
                            : "Тривалість (хв)")
                    | durationMin.ToNumberInput(min: 1, max: 240)
-                   | new Button("Створити датасет симуляції").Primary().Disabled(busy.Value).OnClick(async () =>
+                   | new Button("Створити датасет симуляції").Primary().Disabled(!access.CanWrite || busy.Value).OnClick(async () =>
                    {
                        busy.Set(true);
                        try
@@ -173,7 +198,9 @@ public sealed class EnvironmentSimulationApp : ViewBase
                                DurationMinutes = (int)decimal.Round(decimal.Clamp(durationMin.Value, 1, 240)),
                                AlignToFieldDatasetId = alignId
                            };
-                           var ds = await api.GenerateSimulationDatasetAsync(dto);
+                           var scope = await AuthViewHelper.ResolveDatasetScopeAsync(
+                               auth, users, userQuery.Value, CancellationToken.None);
+                           var ds = await api.GenerateSimulationDatasetAsync(dto, scope);
                            generatedSimulationRows.Set(generatedSimulationRows.Value.Add(new SimulatedDatasetGridRow(
                                ds.Id,
                                ds.Name,

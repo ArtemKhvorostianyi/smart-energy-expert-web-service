@@ -1,5 +1,5 @@
 {
-  "BackendApi": {
-    "BaseUrl": "https://YOUR-API-HOSTNAME/"
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=postgres;Port=5432;Database=hydroacoustic_expert;Username=YOUR_USER;Password=YOUR_PASSWORD"
   }
 }

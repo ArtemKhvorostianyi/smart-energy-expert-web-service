@@ -4,43 +4,58 @@
 
 Програмний засіб для **порівняння результатів гідроакустичного моделювання з даними натурних вимірювань**: датасети («симуляція», «поле»), метрики, відмінності, рекомендації.
 
-- **Сервер** — ASP.NET Core Web API, **PostgreSQL** + EF Core. **Без автентифікації на API** (хто має доступ до хоста — використовує API; ізолюйте мережею).
-- **Клієнт** — Ivy-додаток у каталозі `client/`; звернення лише через **`BackendApi:BaseUrl`** у `client/appsettings.json` (або змінна оточення `BackendApi__BaseUrl`). Авторизація до API, user-secrets і Ivy-з’єднання під бекенд **не використовуються**.
+- **Застосунок** — Ivy (`client/`): UI + бізнес-логіка + **PostgreSQL** через Entity Framework Core (`Connections/AppDb`).
+- Окремий ASP.NET API (`server/`) **більше не потрібен** для роботи клієнта — залишено для зворотної сумісності / поступового видалення.
 
-## 2. Бекенд у Docker (`deploy/department`)
+## 2. PostgreSQL (локально або Docker)
 
-**Вимоги:** Docker Engine + Compose v2.
+**Вимоги:** PostgreSQL 16 (локально або через Compose).
 
 ```bash
 cd deploy/department
 cp example.env .env
+docker compose up -d postgres
 ```
 
-У `.env`: надійний `POSTGRES_PASSWORD`; за потреби `DEPARTMENT_HTTP_PORT` (типово **18080**), `DEPARTMENT_DB_PORT` (**15432**).
-
-```bash
-docker compose up -d --build
-```
-
-Перший старт — міграції та сиди (синтетика + bundled CSV).
-
-```bash
-curl -sf "http://localhost:18080/health"
-```
-
-Зупинка: `docker compose down` (з `-v` — видалиться volume Postgres).
-
-Шаблон: **`deploy/department/example.env`**; робочий **`.env`** не комітують.
+У `client/appsettings.json` (або user-secrets / змінна `ConnectionStrings__DefaultConnection`) задайте рядок підключення до Postgres.
 
 ## 3. Клієнт Ivy
 
 Інструмент (одноразово): `dotnet tool install -g Ivy.Console`.
 
-У **`client/appsettings.json`** задайте URL API (`http://localhost:18080/` після Compose з порту за замовчуванням, або `http://localhost:5109/` якщо API запущено локально через `dotnet run` без Docker).
-
 ```bash
 cd client
-ivy run --browse
+./run-dev.sh
 ```
 
+Або вручну (звільнить 5010, якщо лишився попередній процес):
+
+```bash
+ivy run --port 5010 --browse --i-kill-for-this-port
+```
+
+### Автентифікація (Basic Auth)
+
+- Розділ **«Вхід»** — логін, реєстрація профілю (PostgreSQL), гостьовий режим.
+- **Гість і аналітик:** спільна пара ARLUT part A (~43 тис. зразків поле + вирівняна симуляція) для порівняння з першого входу; власні датасети — лише у зареєстрованого користувача.
+- **Гість:** `guest` / `explore` — без імпорту, генерації симуляцій і PDF.
+- **Повний доступ** після реєстрації та входу email/паролем.
+
+Для production змініть у user-secrets або env:
+
+- `BasicAuth:HashSecret`, `BasicAuth:JwtSecret` (base64, ≥32 байт)
+- `Guest:Password`
+
 У застосунку: Панель, керування датасетами, середовищна симуляція, гідроакустичне порівняння тощо.
+
+## 4. Docker (лише API + Postgres, legacy)
+
+Якщо потрібен старий API:
+
+```bash
+cd deploy/department
+docker compose up -d --build
+curl -sf "http://localhost:18080/health"
+```
+
+Для **чистого Ivy** достатньо сервісу `postgres` у Compose і локального `ivy run`.

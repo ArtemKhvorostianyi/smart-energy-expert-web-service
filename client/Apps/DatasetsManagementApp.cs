@@ -1,4 +1,5 @@
 using ClientServices = SmartEnergyExpert.Client.Services;
+using SmartEnergyExpert.Client.Services.Auth;
 
 namespace SmartEnergyExpert.Client.Apps;
 
@@ -15,6 +16,22 @@ public sealed class DatasetsManagementApp : ViewBase
     public override object? Build()
     {
         var api = UseService<ClientServices.IApiClient>();
+        var auth = UseService<IAuthService>();
+        var users = UseService<UserAccountService>();
+        var userQuery = UseQuery(
+            key: AuthViewHelper.UserQueryKey,
+            fetcher: async ct =>
+            {
+                if (auth.GetAuthSession()?.AuthToken is null)
+                {
+                    return (UserInfo?)null;
+                }
+
+                return auth is AuthService authService
+                    ? await authService.GetUserInfoAsync(ct)
+                    : null;
+            });
+        var access = AuthAccess.From(auth, userQuery.Value);
         var refreshTick = UseState(0);
         var status = UseState("");
         var deleteBusy = UseState(false);
@@ -29,8 +46,12 @@ public sealed class DatasetsManagementApp : ViewBase
         var fieldUploadCore = UseUpload(MemoryStreamUploadHandler.Create(fieldCsvUpload));
 
         var datasetsQuery = UseQuery(
-            key: (nameof(DatasetsManagementApp), refreshTick.Value),
-            fetcher: async ct => await api.GetDatasetsAsync(ct));
+            key: (nameof(DatasetsManagementApp), refreshTick.Value, userQuery.Value?.Email),
+            fetcher: async ct =>
+            {
+                var scope = await AuthViewHelper.ResolveDatasetScopeAsync(auth, users, userQuery.Value, ct);
+                return await api.GetDatasetsAsync(scope, ct);
+            });
 
         var simUpload = simUploadCore
             .Accept("text/csv,.csv,text/plain")
@@ -53,7 +74,7 @@ public sealed class DatasetsManagementApp : ViewBase
         if (datasetsSorted.Length == 0 && !datasetsQuery.Loading && datasetsQuery.Error is null)
         {
             datasetsList = Text.Muted(
-                "Ще немає датасетів — імпортуйте CSV вище або ініціалізуйте дані через API.");
+                "Ще немає датасетів — імпортуйте CSV вище або дочекайтесь ініціалізації БД при старті.");
         }
         else if (datasetsSorted.Length == 0)
         {
@@ -70,13 +91,15 @@ public sealed class DatasetsManagementApp : ViewBase
                     Layout.Vertical().Gap(1)
                     | Text.H3(title)
                     | new Button("Видалити датасет")
-                        .Disabled(deleteBusy.Value)
+                        .Disabled(!access.CanWrite || deleteBusy.Value)
                         .OnClick(async () =>
                         {
                             deleteBusy.Set(true);
                             try
                             {
-                                await api.DeleteDatasetAsync(id);
+                                var scope = await AuthViewHelper.ResolveDatasetScopeAsync(
+                                    auth, users, userQuery.Value, CancellationToken.None);
+                                await api.DeleteDatasetAsync(id, scope);
                                 refreshTick.Set(refreshTick.Value + 1);
                                 status.Set($"Видалено «{title}».");
                             }
@@ -96,8 +119,9 @@ public sealed class DatasetsManagementApp : ViewBase
 
         return Layout.Vertical().Gap(2)
                | Text.H2("Керування датасетами")
+               | AuthAccess.RequireWriteGate(access, AuthViewHelper.WriteLockedMessage)
                | Text.Muted(
-                   "Імпорт CSV створює новий датасет з іменем файлу. Нижче — усі датасети з API (засіяні, синтетичні, імпортовані).")
+                   "Імпорт CSV створює новий датасет з іменем файлу. Нижче — усі датасети з PostgreSQL (засіяні, синтетичні, імпортовані).")
 
                | (datasetsQuery.Error is { } err ? Callout.Warning(err.Message) : new Fragment())
                | (datasetsQuery.Loading ? Callout.Info("Завантаження датасетів…") : new Fragment())
@@ -117,9 +141,12 @@ public sealed class DatasetsManagementApp : ViewBase
                            .Placeholder("Оберіть .csv симуляції…")
                        | new Button("Імпортувати CSV симуляції")
                            .Primary()
-                           .Disabled(busySimImport.Value || !simBytesReady)
+                           .Disabled(!access.CanWrite || busySimImport.Value || !simBytesReady)
                            .OnClick(async () => await ImportCsvBranchAsync(
                                api,
+                               auth,
+                               users,
+                               userQuery.Value,
                                simCsvUpload,
                                "simulation",
                                busySimImport,
@@ -135,9 +162,12 @@ public sealed class DatasetsManagementApp : ViewBase
                            .Placeholder("Оберіть польовий .csv…")
                        | new Button("Імпортувати польовий CSV")
                            .Primary()
-                           .Disabled(busyFieldImport.Value || !fieldBytesReady)
+                           .Disabled(!access.CanWrite || busyFieldImport.Value || !fieldBytesReady)
                            .OnClick(async () => await ImportCsvBranchAsync(
                                api,
+                               auth,
+                               users,
+                               userQuery.Value,
                                fieldCsvUpload,
                                "field",
                                busyFieldImport,
@@ -155,6 +185,9 @@ public sealed class DatasetsManagementApp : ViewBase
 
     private static async Task ImportCsvBranchAsync(
         ClientServices.IApiClient api,
+        IAuthService auth,
+        UserAccountService users,
+        UserInfo? userInfo,
         IState<FileUpload<byte[]>?> fileState,
         string datasetType,
         IState<bool> busy,
@@ -179,16 +212,20 @@ public sealed class DatasetsManagementApp : ViewBase
         busy.Set(true);
         try
         {
-            var created = await api.CreateDatasetAsync(new ClientServices.CreateDatasetRequestDto
-            {
-                Name = datasetName,
-                Type = datasetType,
-                SourceSystem = CsvImportSource,
-                Version = "v1"
-            });
+            var scope = await AuthViewHelper.ResolveDatasetScopeAsync(auth, users, userInfo, CancellationToken.None);
+            var created = await api.CreateDatasetAsync(
+                new ClientServices.CreateDatasetRequestDto
+                {
+                    Name = datasetName,
+                    Type = datasetType,
+                    SourceSystem = CsvImportSource,
+                    Version = "v1"
+                },
+                scope);
 
             var payload = StripUtf8Bom(bytes);
-            var n = await api.ImportCsvFileMultipartAsync(created.Id, payload, Path.GetFileName(rawName));
+            var n = await api.ImportCsvFileMultipartAsync(
+                created.Id, payload, Path.GetFileName(rawName), scope);
             refreshTick.Set(refreshTick.Value + 1);
             clearFile();
 
